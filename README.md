@@ -27,3 +27,7 @@ Download the latest release from [Releases](https://github.com/torlando-tech/col
 Reticulum is a networking stack that lets devices communicate directly with each other, forming resilient mesh networks. Columba uses LXMF (Lightweight Extensible Message Format) to send messages across the Reticulum network.
 
 Want to learn more? Visit [Reticulum's documentation](https://reticulum.network/).
+
+## Why "Columba"
+
+Columba, latin for "dove," is a [constellation](https://en.wikipedia.org/wiki/Columba_(constellation)) in the southern sky depicting a dove. Doves are commonly a symbol of peace and hope, and have been used as messengers throughout history. 
