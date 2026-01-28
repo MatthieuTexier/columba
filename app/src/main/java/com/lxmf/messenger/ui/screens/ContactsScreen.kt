@@ -134,7 +134,7 @@ fun ContactsScreen(
     val context = LocalContext.current
     val sharedTextViewModel: SharedTextViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
     val sharedTextFromViewModel by sharedTextViewModel.sharedText.collectAsState()
-    val effectivePendingSharedText = sharedTextFromViewModel
+    val effectivePendingSharedText = sharedTextFromViewModel?.text
     val groupedContacts by viewModel.groupedContacts.collectAsState()
     val contactCount by viewModel.contactCount.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -525,6 +525,7 @@ fun ContactsScreen(
                                             showPendingContactSheet = true
                                         } else {
                                             if (!effectivePendingSharedText.isNullOrBlank()) {
+                                                sharedTextViewModel.assignToDestination(contact.destinationHash)
                                                 onStartChat(contact.destinationHash, contact.displayName)
                                             } else {
                                                 onContactClick(contact.destinationHash, contact.displayName)
@@ -569,6 +570,7 @@ fun ContactsScreen(
                                             showPendingContactSheet = true
                                         } else {
                                             if (!effectivePendingSharedText.isNullOrBlank()) {
+                                                sharedTextViewModel.assignToDestination(contact.destinationHash)
                                                 onStartChat(contact.destinationHash, contact.displayName)
                                             } else {
                                                 onContactClick(contact.destinationHash, contact.displayName)
