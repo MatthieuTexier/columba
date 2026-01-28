@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,6 +72,7 @@ import com.lxmf.messenger.ui.components.ProfileIcon
 import com.lxmf.messenger.ui.components.SearchableTopAppBar
 import com.lxmf.messenger.ui.components.StarToggleButton
 import com.lxmf.messenger.ui.components.SyncStatusBottomSheet
+import com.lxmf.messenger.viewmodel.SharedTextViewModel
 import com.lxmf.messenger.viewmodel.ChatsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -89,6 +91,11 @@ fun ChatsScreen(
     val syncProgress by viewModel.syncProgress.collectAsState()
     var isSearching by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val sharedTextViewModel: SharedTextViewModel = hiltViewModel(context as androidx.activity.ComponentActivity)
+    val sharedTextFromViewModel by sharedTextViewModel.sharedText.collectAsState()
+    val effectivePendingSharedText = sharedTextFromViewModel?.text
+
     // Delete dialog state (context menu state is now per-card)
     var selectedConversation by remember { mutableStateOf<Conversation?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -97,8 +104,11 @@ fun ChatsScreen(
     var showSyncStatusSheet by remember { mutableStateOf(false) }
     val syncStatusSheetState = rememberModalBottomSheetState()
 
-    // Context for Toast notifications
-    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        onDispose {
+            sharedTextViewModel.clearIfUnassigned()
+        }
+    }
 
     // Observe manual sync results and show Toast
     LaunchedEffect(Unit) {
@@ -184,7 +194,12 @@ fun ChatsScreen(
                         ConversationCard(
                             conversation = conversation,
                             isSaved = isSaved,
-                            onClick = { onChatClick(conversation.peerHash, conversation.displayName) },
+                            onClick = {
+                                if (!effectivePendingSharedText.isNullOrBlank()) {
+                                    sharedTextViewModel.assignToDestination(conversation.peerHash)
+                                }
+                                onChatClick(conversation.peerHash, conversation.displayName)
+                            },
                             onLongPress = {
                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                 showMenu = true
