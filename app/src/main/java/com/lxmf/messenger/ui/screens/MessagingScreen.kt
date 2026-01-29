@@ -4,8 +4,10 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.style.URLSpan
+import android.text.util.Linkify
 import android.util.Log
-import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,6 +32,7 @@ import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -61,6 +64,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -142,6 +146,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.core.text.util.LinkifyCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -206,22 +211,36 @@ private fun LinkifiedMessageText(
         }
     val linkColor = MaterialTheme.colorScheme.primary
 
+    val baseTextStyle = MaterialTheme.typography.bodyLarge.copy(color = textColor)
+
     val annotatedText =
         remember(text, linkColor) {
-            val matches = Patterns.WEB_URL.matcher(text)
+            val spannable = SpannableString(text)
+            LinkifyCompat.addLinks(spannable, Linkify.WEB_URLS)
+
+            val spans = spannable.getSpans(0, spannable.length, URLSpan::class.java)
             buildAnnotatedString {
+                if (spans.isEmpty()) {
+                    append(text)
+                    return@buildAnnotatedString
+                }
+
+                val sortedSpans = spans.sortedBy { spannable.getSpanStart(it) }
                 var currentIndex = 0
-                while (matches.find()) {
-                    val start = matches.start()
-                    val end = matches.end()
+                for (span in sortedSpans) {
+                    val start = spannable.getSpanStart(span)
+                    val end = spannable.getSpanEnd(span)
+                    if (start < 0 || end <= start) continue
+
                     if (start > currentIndex) {
                         append(text.substring(currentIndex, start))
                     }
 
-                    val urlText = text.substring(start, end)
+                    val visibleText = text.substring(start, end)
                     val linkStart = length
-                    append(urlText)
+                    append(visibleText)
                     val linkEnd = length
+
                     addStyle(
                         style =
                             SpanStyle(
@@ -233,10 +252,11 @@ private fun LinkifiedMessageText(
                     )
                     addStringAnnotation(
                         tag = URL_ANNOTATION_TAG,
-                        annotation = urlText,
+                        annotation = span.url,
                         start = linkStart,
                         end = linkEnd,
                     )
+
                     currentIndex = end
                 }
 
@@ -250,8 +270,7 @@ private fun LinkifiedMessageText(
 
     Text(
         text = annotatedText,
-        style = MaterialTheme.typography.bodyLarge,
-        color = textColor,
+        style = baseTextStyle,
         onTextLayout = { layoutResult = it },
         modifier =
             modifier.pointerInput(annotatedText, viewConfiguration.longPressTimeoutMillis) {
@@ -1524,19 +1543,28 @@ fun MessageBubble(
                                 bubbleHeight = coordinates.size.height
                             }
                             .scale(scale) // Apply scale animation after bitmap capture
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    scope.launch {
-                                        val bitmap = graphicsLayer.toImageBitmap()
-                                        onLongPress(message.id, isFromMe, message.status == "failed", bitmap, bubbleX, bubbleY, bubbleWidth, bubbleHeight)
-                                    }
-                                },
-                                // Disable ripple - we use scale animation instead
-                                indication = null,
-                                interactionSource = interactionSource,
-                            ),
+                            // Do NOT consume regular taps here, otherwise link clicks inside the bubble won't work.
+                            // Only consume when a long-press is detected.
+                            .pointerInput(message.id) {
+                                detectTapGestures(
+                                    onLongPress = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        scope.launch {
+                                            val bitmap = graphicsLayer.toImageBitmap()
+                                            onLongPress(
+                                                message.id,
+                                                isFromMe,
+                                                message.status == "failed",
+                                                bitmap,
+                                                bubbleX,
+                                                bubbleY,
+                                                bubbleWidth,
+                                                bubbleHeight,
+                                            )
+                                        }
+                                    },
+                                )
+                            },
                 ) {
                     // PERFORMANCE: Use pre-decoded image from MessageUi to avoid expensive
                     // decoding during composition (critical for smooth scrolling)
