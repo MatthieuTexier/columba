@@ -51,7 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.lxmf.messenger.ui.util.LifecycleGuard
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.lifecycleScope
@@ -71,6 +70,7 @@ import com.lxmf.messenger.reticulum.call.bridge.CallState
 import com.lxmf.messenger.reticulum.protocol.ReticulumProtocol
 import com.lxmf.messenger.service.ReticulumService
 import com.lxmf.messenger.ui.components.BlePermissionBottomSheet
+import com.lxmf.messenger.ui.util.LifecycleGuard
 import com.lxmf.messenger.ui.screens.AnnounceDetailScreen
 import com.lxmf.messenger.ui.screens.AnnounceStreamScreen
 import com.lxmf.messenger.ui.screens.BleConnectionStatusScreen
@@ -101,7 +101,12 @@ import com.lxmf.messenger.ui.theme.ColumbaTheme
 import com.lxmf.messenger.util.CrashReportManager
 import com.lxmf.messenger.util.InterfaceReconnectSignal
 import com.lxmf.messenger.viewmodel.ContactsViewModel
+import com.lxmf.messenger.viewmodel.MainViewModel
+import com.lxmf.messenger.viewmodel.MigrationViewModel
+import com.lxmf.messenger.viewmodel.NotificationSettingsViewModel
 import com.lxmf.messenger.viewmodel.OnboardingViewModel
+import com.lxmf.messenger.viewmodel.SettingsViewModel
+import com.lxmf.messenger.viewmodel.SharedTextViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -298,76 +303,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val intentHandler by lazy {
+        MainActivityIntentHandler(
+            activity = this,
+            pendingNavigation = pendingNavigation,
+            logTag = TAG,
+            onUsbDeviceAttached = { usbDevice -> handleUsbDeviceAttached(usbDevice) },
+        )
+    }
+
     private fun processIntent(intent: Intent?) {
         if (intent == null) return
 
         Log.w(TAG, "📞 processIntent() - action=${intent.action}, extras=${intent.extras?.keySet()}")
         Log.d(TAG, "🔌 USB action check: action='${intent.action}' vs expected='${UsbManager.ACTION_USB_DEVICE_ATTACHED}'")
 
-        when (intent.action) {
-            NotificationHelper.ACTION_OPEN_ANNOUNCE -> {
-                val destinationHash = intent.getStringExtra(NotificationHelper.EXTRA_DESTINATION_HASH)
-                if (destinationHash != null) {
-                    Log.d(TAG, "Opening announce detail for: $destinationHash")
-                    pendingNavigation.value = PendingNavigation.AnnounceDetail(destinationHash)
-                }
-            }
-            NotificationHelper.ACTION_OPEN_CONVERSATION -> {
-                val destinationHash = intent.getStringExtra(NotificationHelper.EXTRA_DESTINATION_HASH)
-                val peerName = intent.getStringExtra(NotificationHelper.EXTRA_PEER_NAME)
-                if (destinationHash != null && peerName != null) {
-                    Log.d(TAG, "Opening conversation with: $peerName ($destinationHash)")
-                    pendingNavigation.value = PendingNavigation.Conversation(destinationHash, peerName)
-                }
-            }
-            Intent.ACTION_VIEW -> {
-                // Handle lxma:// deep links
-                val data = intent.data
-                if (data != null && data.scheme == "lxma") {
-                    val lxmaUrl = data.toString()
-                    Log.d(TAG, "Opening LXMF deep link: $lxmaUrl")
-                    pendingNavigation.value = PendingNavigation.AddContact(lxmaUrl)
-                }
-            }
-            CallNotificationHelper.ACTION_OPEN_CALL -> {
-                // Handle incoming call notification tap
-                val identityHash = intent.getStringExtra(CallNotificationHelper.EXTRA_IDENTITY_HASH)
-                if (identityHash != null) {
-                    Log.d(TAG, "Opening incoming call screen for: ${identityHash.take(16)}...")
-                    pendingNavigation.value = PendingNavigation.IncomingCall(identityHash)
-                }
-            }
-            CallNotificationHelper.ACTION_ANSWER_CALL -> {
-                // Handle answer from notification - go directly to voice call and auto-answer
-                val identityHash = intent.getStringExtra(CallNotificationHelper.EXTRA_IDENTITY_HASH)
-                Log.w(TAG, "📞 ACTION_ANSWER_CALL received! identityHash=$identityHash")
-                if (identityHash != null) {
-                    Log.w(TAG, "📞 Setting pendingNavigation to AnswerCall($identityHash)")
-                    // Cancel the incoming call notification
-                    CallNotificationHelper(this).cancelIncomingCallNotification()
-                    pendingNavigation.value = PendingNavigation.AnswerCall(identityHash)
-                    Log.w(TAG, "📞 pendingNavigation.value is now: ${pendingNavigation.value}")
-                } else {
-                    Log.e(TAG, "📞 identityHash is NULL! Cannot navigate to call")
-                }
-            }
-            UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                Log.d(TAG, "🔌 USB_DEVICE_ATTACHED action matched!")
-                @Suppress("DEPRECATION")
-                val usbDevice: UsbDevice? =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                    } else {
-                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                    }
-                if (usbDevice != null) {
-                    Log.d(TAG, "🔌 USB device attached: ${usbDevice.deviceName} (${usbDevice.deviceId})")
-                    handleUsbDeviceAttached(usbDevice)
-                } else {
-                    Log.e(TAG, "🔌 USB device is null in intent extras!")
-                }
-            }
-        }
+        intentHandler.handle(intent)
     }
 
     /**
@@ -463,6 +414,8 @@ sealed class PendingNavigation {
 
     data class AddContact(val lxmaUrl: String) : PendingNavigation()
 
+    data class SharedText(val text: String) : PendingNavigation()
+
     data class IncomingCall(val identityHash: String) : PendingNavigation()
 
     data class AnswerCall(val identityHash: String) : PendingNavigation()
@@ -506,6 +459,25 @@ fun ColumbaNavigation(
     val lifecycleOwner = LocalLifecycleOwner.current
     val navController = rememberNavController()
     var selectedTab by remember { mutableIntStateOf(0) }
+
+    val sharedTextViewModel: SharedTextViewModel = hiltViewModel(context as ComponentActivity)
+
+    // Clear pending shared text deterministically if the user leaves Chats/Contacts
+    // without selecting a destination.
+    var lastRoute by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(navController) {
+        navController.currentBackStackEntryFlow.collect { entry ->
+            val route = entry.destination.route
+            val wasInPickDestinationFlow = lastRoute == Screen.Chats.route || lastRoute == Screen.Contacts.route
+            val isInPickDestinationFlow = route == Screen.Chats.route || route == Screen.Contacts.route
+
+            if (wasInPickDestinationFlow && !isInPickDestinationFlow) {
+                sharedTextViewModel.clearIfUnassigned()
+            }
+
+            lastRoute = route
+        }
+    }
 
     // Track if we're currently navigating to answer a call (prevents race with callState observer)
     var isAnsweringCall by remember { mutableStateOf(false) }
@@ -582,6 +554,22 @@ fun ColumbaNavigation(
                     }
                     pendingContactAdd = navigation.lxmaUrl
                     Log.d("ColumbaNavigation", "Navigated to contacts for deep link: ${navigation.lxmaUrl}")
+                }
+                is PendingNavigation.SharedText -> {
+                    sharedTextViewModel.setText(navigation.text)
+
+                    selectedTab = 0
+                    val poppedToChats = navController.popBackStack(Screen.Chats.route, inclusive = false)
+                    if (!poppedToChats) {
+                        navController.navigate(Screen.Chats.route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                    Log.d("ColumbaNavigation", "Handled shared text intent")
                 }
                 is PendingNavigation.IncomingCall -> {
                     // Navigate to incoming call screen
@@ -917,6 +905,11 @@ fun ColumbaNavigation(
                                 val contacts = contactsViewModel.contacts.value
                                 val contact = contacts.find { it.destinationHash == destinationHash }
                                 val peerName = contact?.displayName ?: destinationHash.take(16)
+                                val encodedHash = Uri.encode(destinationHash)
+                                val encodedName = Uri.encode(peerName)
+                                navController.navigate("messaging/$encodedHash/$encodedName")
+                            },
+                            onStartChat = { destinationHash, peerName ->
                                 val encodedHash = Uri.encode(destinationHash)
                                 val encodedName = Uri.encode(peerName)
                                 navController.navigate("messaging/$encodedHash/$encodedName")
