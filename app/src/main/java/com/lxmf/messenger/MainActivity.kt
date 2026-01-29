@@ -50,10 +50,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -138,23 +139,26 @@ class MainActivity : ComponentActivity() {
     // JankStats for performance monitoring (Phase 1 Plan 01-03)
     private lateinit var jankStats: androidx.metrics.performance.JankStats
 
-    private val jankFrameListener = androidx.metrics.performance.JankStats.OnFrameListener { frameData ->
-        // Report janky frames to Sentry as breadcrumbs
-        if (frameData.isJank) {
-            val durationMs = frameData.frameDurationUiNanos / 1_000_000
-            io.sentry.Sentry.addBreadcrumb(io.sentry.Breadcrumb().apply {
-                category = "performance"
-                message = "Janky frame: ${durationMs}ms"
-                level = if (durationMs > 100) io.sentry.SentryLevel.WARNING else io.sentry.SentryLevel.INFO
-                setData("frame_duration_ms", durationMs)
-                val stateString = frameData.states.joinToString { "${it.key}=${it.value}" }
-                setData("states", stateString)
-            })
+    private val jankFrameListener =
+        androidx.metrics.performance.JankStats.OnFrameListener { frameData ->
+            // Report janky frames to Sentry as breadcrumbs
+            if (frameData.isJank) {
+                val durationMs = frameData.frameDurationUiNanos / 1_000_000
+                io.sentry.Sentry.addBreadcrumb(
+                    io.sentry.Breadcrumb().apply {
+                        category = "performance"
+                        message = "Janky frame: ${durationMs}ms"
+                        level = if (durationMs > 100) io.sentry.SentryLevel.WARNING else io.sentry.SentryLevel.INFO
+                        setData("frame_duration_ms", durationMs)
+                        val stateString = frameData.states.joinToString { "${it.key}=${it.value}" }
+                        setData("states", stateString)
+                    },
+                )
 
-            // Log for local debugging
-            Log.w(TAG, "Jank detected: ${durationMs}ms with states ${frameData.states}")
+                // Log for local debugging
+                Log.w(TAG, "Jank detected: ${durationMs}ms with states ${frameData.states}")
+            }
         }
-    }
 
     // Track last handled USB device to avoid double-processing
     private var lastHandledUsbDeviceId: Int = -1
@@ -267,7 +271,9 @@ class MainActivity : ComponentActivity() {
 
         // Initialize JankStats for frame monitoring (Phase 1 Plan 01-03)
         window.decorView.post {
-            jankStats = androidx.metrics.performance.JankStats.createAndTrack(window, jankFrameListener)
+            jankStats =
+                androidx.metrics.performance.JankStats
+                    .createAndTrack(window, jankFrameListener)
             jankStats.isTrackingEnabled = true
             Log.d(TAG, "JankStats initialized and tracking enabled")
         }
@@ -408,20 +414,33 @@ class MainActivity : ComponentActivity() {
  * Represents a pending navigation action from an intent.
  */
 sealed class PendingNavigation {
-    data class AnnounceDetail(val destinationHash: String) : PendingNavigation()
+    data class AnnounceDetail(
+        val destinationHash: String,
+    ) : PendingNavigation()
 
-    data class Conversation(val destinationHash: String, val peerName: String) : PendingNavigation()
+    data class Conversation(
+        val destinationHash: String,
+        val peerName: String,
+    ) : PendingNavigation()
 
-    data class AddContact(val lxmaUrl: String) : PendingNavigation()
+    data class AddContact(
+        val lxmaUrl: String,
+    ) : PendingNavigation()
 
     data class SharedText(val text: String) : PendingNavigation()
 
-    data class IncomingCall(val identityHash: String) : PendingNavigation()
+    data class IncomingCall(
+        val identityHash: String,
+    ) : PendingNavigation()
 
-    data class AnswerCall(val identityHash: String) : PendingNavigation()
+    data class AnswerCall(
+        val identityHash: String,
+    ) : PendingNavigation()
 
     /** Navigate to interface stats screen for an existing configured interface */
-    data class InterfaceStats(val interfaceId: Long) : PendingNavigation()
+    data class InterfaceStats(
+        val interfaceId: Long,
+    ) : PendingNavigation()
 
     /** Navigate to RNode wizard with USB device pre-selected */
     data class RNodeWizardWithUsb(
@@ -432,7 +451,11 @@ sealed class PendingNavigation {
     ) : PendingNavigation()
 }
 
-sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+sealed class Screen(
+    val route: String,
+    val title: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+) {
     object Welcome : Screen("welcome", "Welcome", Icons.Default.Sensors)
 
     object Chats : Screen("chats", "Chats", Icons.Default.Chat)
@@ -460,7 +483,7 @@ fun ColumbaNavigation(
     val navController = rememberNavController()
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val sharedTextViewModel: SharedTextViewModel = hiltViewModel(context as ComponentActivity)
+    val sharedTextViewModel: SharedTextViewModel = viewModel(viewModelStoreOwner = context as ComponentActivity)
 
     // Clear pending shared text deterministically if the user leaves Chats/Contacts
     // without selecting a destination.
@@ -482,9 +505,15 @@ fun ColumbaNavigation(
     // Track if we're currently navigating to answer a call (prevents race with callState observer)
     var isAnsweringCall by remember { mutableStateOf(false) }
 
+    // Track if the Map screen's location permission UI has been dismissed this session.
+    // Managed here (at MainActivity level) so it survives tab switches. Issue #342.
+    var mapPermissionSheetDismissed by remember { mutableStateOf(false) }
+    var mapPermissionCardDismissed by remember { mutableStateOf(false) }
+
     // Access SettingsViewModel to get theme preference
     val settingsViewModel: com.lxmf.messenger.viewmodel.SettingsViewModel =
-        androidx.hilt.navigation.compose.hiltViewModel()
+        androidx.hilt.navigation.compose
+            .hiltViewModel()
 
     // Collect settings state (includes theme preference)
     val settingsState by settingsViewModel.state.collectAsState()
@@ -936,6 +965,10 @@ fun ColumbaNavigation(
                                         "&loraCr=${cr ?: -1}",
                                 )
                             },
+                            permissionSheetDismissed = mapPermissionSheetDismissed,
+                            onPermissionSheetDismissed = { mapPermissionSheetDismissed = true },
+                            permissionCardDismissed = mapPermissionCardDismissed,
+                            onPermissionCardDismissed = { mapPermissionCardDismissed = true },
                         )
                     }
 
@@ -1065,6 +1098,10 @@ fun ColumbaNavigation(
                             focusLongitude = if (lon != 0.0) lon else null,
                             focusLabel = label?.ifEmpty { null },
                             focusInterfaceDetails = focusDetails,
+                            permissionSheetDismissed = mapPermissionSheetDismissed,
+                            onPermissionSheetDismissed = { mapPermissionSheetDismissed = true },
+                            permissionCardDismissed = mapPermissionCardDismissed,
+                            onPermissionCardDismissed = { mapPermissionCardDismissed = true },
                         )
                     }
 

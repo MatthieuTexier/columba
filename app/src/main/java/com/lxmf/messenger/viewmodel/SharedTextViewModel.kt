@@ -1,15 +1,10 @@
 package com.lxmf.messenger.viewmodel
 
 import androidx.lifecycle.ViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-@HiltViewModel
-class SharedTextViewModel
-    @Inject
-    constructor() : ViewModel() {
+class SharedTextViewModel : ViewModel() {
         data class PendingSharedText(
             val text: String,
             val targetDestinationHash: String? = null,
@@ -24,7 +19,6 @@ class SharedTextViewModel
 
         fun assignToDestination(destinationHash: String) {
             val current = _sharedText.value ?: return
-            if (current.targetDestinationHash != null) return
             _sharedText.value = current.copy(targetDestinationHash = destinationHash)
         }
 

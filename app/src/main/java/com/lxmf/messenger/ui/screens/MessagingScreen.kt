@@ -149,6 +149,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.text.util.LinkifyCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
@@ -327,7 +328,7 @@ fun MessagingScreen(
 
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    val sharedTextViewModel: SharedTextViewModel = hiltViewModel(context as ComponentActivity)
+    val sharedTextViewModel: SharedTextViewModel = viewModel(viewModelStoreOwner = context as ComponentActivity)
     val sharedTextFromViewModel by sharedTextViewModel.sharedText.collectAsStateWithLifecycle()
 
     LaunchedEffect(destinationHash, sharedTextFromViewModel) {
