@@ -148,6 +148,7 @@ class TelemetryCollectorManager
         private var settingsObserverJob: Job? = null
         private var periodicSendJob: Job? = null
         private var periodicRequestJob: Job? = null
+        private var periodicHostSelfLocationJob: Job? = null
 
         /**
          * Start the manager - begin observing settings and schedule periodic sends.
@@ -245,6 +246,7 @@ class TelemetryCollectorManager
                         _isHostModeEnabled.value = enabled
                         Log.d(TAG, "Host mode: $enabled")
                         syncHostModeWithPython(enabled)
+                        restartPeriodicHostSelfLocation()
                     }
             }
             launch {
@@ -266,9 +268,11 @@ class TelemetryCollectorManager
             settingsObserverJob?.cancel()
             periodicSendJob?.cancel()
             periodicRequestJob?.cancel()
+            periodicHostSelfLocationJob?.cancel()
             settingsObserverJob = null
             periodicSendJob = null
             periodicRequestJob = null
+            periodicHostSelfLocationJob = null
         }
 
         /**
@@ -552,6 +556,82 @@ class TelemetryCollectorManager
                         delay(if (delayTime > 0) delayTime else 30_000L)
                     }
                 }
+        }
+
+        /**
+         * Restart the periodic host self-location storage job.
+         * When host mode is active, periodically stores the host's own GPS location
+         * in Python's collected_telemetry so it is included in stream responses.
+         */
+        private fun restartPeriodicHostSelfLocation() {
+            periodicHostSelfLocationJob?.cancel()
+
+            if (!_isHostModeEnabled.value) {
+                Log.d(TAG, "Host self-location disabled (host mode off)")
+                return
+            }
+
+            periodicHostSelfLocationJob =
+                scope.launch {
+                    reticulumProtocol.networkStatus.first { it is NetworkStatus.READY }
+                    Log.d(TAG, "Network ready, starting periodic host self-location storage")
+
+                    while (true) {
+                        if (_isHostModeEnabled.value) {
+                            storeHostOwnLocation()
+                        }
+                        // Reuse the send interval for self-location updates
+                        val intervalSeconds = _sendIntervalSeconds.value
+                        delay(intervalSeconds * 1000L)
+                    }
+                }
+        }
+
+        /**
+         * Get the current location and store it in Python's collected_telemetry.
+         */
+        @Suppress("MissingPermission") // Permission checked at higher level
+        private suspend fun storeHostOwnLocation() {
+            try {
+                val location = getCurrentLocation() ?: return
+
+                val telemetryData =
+                    LocationTelemetryData(
+                        lat = location.latitude,
+                        lng = location.longitude,
+                        acc = location.accuracy,
+                        ts = if (location.time > 0) location.time else System.currentTimeMillis(),
+                        altitude = location.altitude,
+                        speed = location.speed,
+                        bearing = location.bearing,
+                    )
+                val locationJson = Json.encodeToString(telemetryData)
+
+                val iconAppearance =
+                    identityRepository.getActiveIdentitySync()?.let { activeId ->
+                        val name = activeId.iconName
+                        val fg = activeId.iconForegroundColor
+                        val bg = activeId.iconBackgroundColor
+                        if (name != null && fg != null && bg != null) {
+                            com.lxmf.messenger.reticulum.protocol.IconAppearance(
+                                iconName = name,
+                                foregroundColor = fg,
+                                backgroundColor = bg,
+                            )
+                        } else {
+                            null
+                        }
+                    }
+
+                val result = reticulumProtocol.storeOwnTelemetry(locationJson, iconAppearance)
+                if (result.isSuccess) {
+                    Log.d(TAG, "📍 Host self-location stored in collected_telemetry")
+                } else {
+                    Log.w(TAG, "Failed to store host self-location: ${result.exceptionOrNull()?.message}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error storing host self-location", e)
+            }
         }
 
         /**
