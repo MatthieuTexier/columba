@@ -691,6 +691,10 @@ private fun TelemetryCollectorSection(
                     onCollectorAddressChange(contact.destinationHash.lowercase())
                     showContactPicker = false
                 },
+                onUnset = {
+                    onCollectorAddressChange(null)
+                    showContactPicker = false
+                },
                 onDismiss = { showContactPicker = false },
                 localDestinationHash = localDestinationHash,
                 localDisplayName = localDisplayName,
@@ -1270,6 +1274,7 @@ private fun GroupHostPickerDialog(
     contacts: List<EnrichedContact>,
     selectedHash: String?,
     onContactSelected: (EnrichedContact) -> Unit,
+    onUnset: () -> Unit,
     onDismiss: () -> Unit,
     localDestinationHash: String? = null,
     localDisplayName: String = "Myself",
@@ -1296,56 +1301,90 @@ private fun GroupHostPickerDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 350.dp),
-                ) {
-                    // "Myself" option at the top
-                    if (localDestinationHash != null) {
-                        item {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable(onClick = onSelfSelected)
-                                        .padding(horizontal = 8.dp, vertical = 12.dp),
-                            ) {
-                                val hashBytes =
-                                    localDestinationHash
-                                        .chunked(2)
-                                        .mapNotNull { it.toIntOrNull(16)?.toByte() }
-                                        .toByteArray()
-                                ProfileIcon(
-                                    iconName = localIconName,
-                                    foregroundColor = localIconForegroundColor,
-                                    backgroundColor = localIconBackgroundColor,
-                                    size = 40.dp,
-                                    fallbackHash = hashBytes,
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = "$localDisplayName (myself)",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color =
-                                        if (isSelfSelected) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface
-                                        },
-                                    fontWeight = if (isSelfSelected) FontWeight.Bold else FontWeight.Normal,
-                                    modifier = Modifier.weight(1f),
-                                )
+                if (contacts.isEmpty() && localDestinationHash == null) {
+                    Text(
+                        text = "No contacts available. Add contacts first.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 350.dp),
+                    ) {
+                        // "Myself" option at the top
+                        if (localDestinationHash != null) {
+                            item {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable(onClick = onSelfSelected)
+                                            .padding(horizontal = 8.dp, vertical = 12.dp),
+                                ) {
+                                    val hashBytes =
+                                        localDestinationHash
+                                            .chunked(2)
+                                            .mapNotNull { it.toIntOrNull(16)?.toByte() }
+                                            .toByteArray()
+                                    ProfileIcon(
+                                        iconName = localIconName,
+                                        foregroundColor = localIconForegroundColor,
+                                        backgroundColor = localIconBackgroundColor,
+                                        size = 40.dp,
+                                        fallbackHash = hashBytes,
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "$localDisplayName (myself)",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color =
+                                            if (isSelfSelected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        fontWeight = if (isSelfSelected) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                HorizontalDivider()
                             }
-                            HorizontalDivider()
                         }
-                    }
-
-                    items(contacts.sortedBy { it.displayName.lowercase() }) { contact ->
-                        GroupHostContactRow(
-                            contact = contact,
-                            isSelected = contact.destinationHash.equals(selectedHash, ignoreCase = true),
-                            onClick = { onContactSelected(contact) },
-                        )
+                        // "None" option to unset the group host
+                        if (selectedHash != null) {
+                            item {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable(onClick = onUnset)
+                                            .padding(horizontal = 8.dp, vertical = 12.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(40.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "None",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                HorizontalDivider()
+                            }
+                        }
+                        items(contacts.sortedBy { it.displayName.lowercase() }) { contact ->
+                            GroupHostContactRow(
+                                contact = contact,
+                                isSelected = contact.destinationHash.equals(selectedHash, ignoreCase = true),
+                                onClick = { onContactSelected(contact) },
+                            )
+                        }
                     }
                 }
             }

@@ -73,6 +73,8 @@ object DatabaseModule {
             MIGRATION_34_35,
             MIGRATION_35_36,
             MIGRATION_36_37,
+            MIGRATION_37_38,
+            MIGRATION_38_39,
         )
     }
 
@@ -1515,6 +1517,37 @@ object DatabaseModule {
                     """.trimIndent(),
                 )
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_drafts_identityHash ON drafts(identityHash)")
+            }
+        }
+
+    // Migration from version 37 to 38: Add isDefault column to offline_map_regions
+    // Allows users to mark an offline map region as the default map center
+    // Used when no GPS location is available (instead of defaulting to San Francisco)
+    private val MIGRATION_37_38 =
+        object : Migration(37, 38) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE offline_map_regions ADD COLUMN isDefault INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
+    // Migration from version 38 to 39: Add encrypted identity key storage
+    // Adds columns for AES-256-GCM encrypted key data using Android Keystore
+    // The keyData column will be cleared after encryption migration completes
+    private val MIGRATION_38_39 =
+        object : Migration(38, 39) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add encryptedKeyData column for storing device-encrypted key
+                database.execSQL("ALTER TABLE local_identities ADD COLUMN encryptedKeyData BLOB")
+                // Add keyEncryptionVersion: 0=plain, 1=device-only, 2=device+password
+                database.execSQL(
+                    "ALTER TABLE local_identities ADD COLUMN keyEncryptionVersion INTEGER NOT NULL DEFAULT 0",
+                )
+                // Add passwordSalt for PBKDF2 key derivation (if password protected)
+                database.execSQL("ALTER TABLE local_identities ADD COLUMN passwordSalt BLOB")
+                // Add passwordVerificationHash for verifying password correctness
+                database.execSQL("ALTER TABLE local_identities ADD COLUMN passwordVerificationHash BLOB")
             }
         }
 
