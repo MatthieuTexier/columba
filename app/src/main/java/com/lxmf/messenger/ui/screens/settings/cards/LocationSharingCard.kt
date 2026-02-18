@@ -700,7 +700,6 @@ private fun TelemetryCollectorSection(
                 onSelfSelected = {
                     if (localDestinationHash != null) {
                         onCollectorAddressChange(localDestinationHash.lowercase())
-                        onHostModeEnabledChange(true)
                         showContactPicker = false
                     }
                 },

@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -90,7 +89,6 @@ class TelemetryCollectorManagerTest {
 
         // Setup protocol methods for host mode
         coEvery { mockReticulumProtocol.setTelemetryCollectorMode(any()) } returns Result.success(Unit)
-        coEvery { mockReticulumProtocol.storeOwnTelemetry(any(), any()) } returns Result.success(Unit)
     }
 
     @After
@@ -699,10 +697,8 @@ class TelemetryCollectorManagerTest {
             advanceUntilIdle()
 
             // Enable host mode - simulate the flow update that would come from the repository
-            // Use runCurrent() instead of advanceUntilIdle() because enabling host mode
-            // starts an infinite periodic self-location job that would hang advanceUntilIdle()
             hostModeEnabledFlow.value = true
-            runCurrent()
+            advanceUntilIdle()
 
             // Verify Python sync was called
             assertTrue("isHostModeEnabled should be true", manager.isHostModeEnabled.value)
@@ -710,7 +706,7 @@ class TelemetryCollectorManagerTest {
 
             // Disable host mode - simulate the flow update
             hostModeEnabledFlow.value = false
-            runCurrent()
+            advanceUntilIdle()
 
             // Verify Python sync was called with false
             assertFalse("isHostModeEnabled should be false", manager.isHostModeEnabled.value)
@@ -731,10 +727,8 @@ class TelemetryCollectorManagerTest {
             advanceUntilIdle()
 
             // Simulate settings flow update (as if changed externally)
-            // Use runCurrent() instead of advanceUntilIdle() because enabling host mode
-            // starts an infinite periodic self-location job that would hang advanceUntilIdle()
             hostModeEnabledFlow.value = true
-            runCurrent()
+            advanceUntilIdle()
 
             // Verify Python layer was synced and state updated
             assertTrue("isHostModeEnabled should reflect flow update", manager.isHostModeEnabled.value)

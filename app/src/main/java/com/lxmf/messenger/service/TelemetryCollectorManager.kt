@@ -152,7 +152,6 @@ class TelemetryCollectorManager
         private var settingsObserverJob: Job? = null
         private var periodicSendJob: Job? = null
         private var periodicRequestJob: Job? = null
-        private var periodicHostSelfLocationJob: Job? = null
 
         /**
          * Start the manager - begin observing settings and schedule periodic sends.
@@ -250,7 +249,6 @@ class TelemetryCollectorManager
                         _isHostModeEnabled.value = enabled
                         Log.d(TAG, "Host mode: $enabled")
                         syncHostModeWithPython(enabled)
-                        restartPeriodicHostSelfLocation()
                     }
             }
             launch {
@@ -272,11 +270,9 @@ class TelemetryCollectorManager
             settingsObserverJob?.cancel()
             periodicSendJob?.cancel()
             periodicRequestJob?.cancel()
-            periodicHostSelfLocationJob?.cancel()
             settingsObserverJob = null
             periodicSendJob = null
             periodicRequestJob = null
-            periodicHostSelfLocationJob = null
         }
 
         /**
@@ -563,79 +559,11 @@ class TelemetryCollectorManager
         }
 
         /**
-         * Restart the periodic host self-location storage job.
-         * When host mode is active, periodically stores the host's own GPS location
-         * in Python's collected_telemetry so it is included in stream responses.
+         * Check if the given collector hash is the local device's own destination hash.
          */
-        private fun restartPeriodicHostSelfLocation() {
-            periodicHostSelfLocationJob?.cancel()
-
-            if (!_isHostModeEnabled.value) {
-                Log.d(TAG, "Host self-location disabled (host mode off)")
-                return
-            }
-
-            periodicHostSelfLocationJob =
-                scope.launch {
-                    reticulumProtocol.networkStatus.first { it is NetworkStatus.READY }
-                    Log.d(TAG, "Network ready, starting periodic host self-location storage")
-
-                    while (true) {
-                        if (_isHostModeEnabled.value) {
-                            storeHostOwnLocation()
-                        }
-                        // Reuse the send interval for self-location updates
-                        val intervalSeconds = _sendIntervalSeconds.value
-                        delay(intervalSeconds * 1000L)
-                    }
-                }
-        }
-
-        /**
-         * Get the current location and store it in Python's collected_telemetry.
-         */
-        @Suppress("MissingPermission") // Permission checked at higher level
-        private suspend fun storeHostOwnLocation() {
-            try {
-                val location = getCurrentLocation() ?: return
-
-                val telemetryData =
-                    LocationTelemetryData(
-                        lat = location.latitude,
-                        lng = location.longitude,
-                        acc = location.accuracy,
-                        ts = if (location.time > 0) location.time else System.currentTimeMillis(),
-                        altitude = location.altitude,
-                        speed = location.speed,
-                        bearing = location.bearing,
-                    )
-                val locationJson = Json.encodeToString(telemetryData)
-
-                val iconAppearance =
-                    identityRepository.getActiveIdentitySync()?.let { activeId ->
-                        val name = activeId.iconName
-                        val fg = activeId.iconForegroundColor
-                        val bg = activeId.iconBackgroundColor
-                        if (name != null && fg != null && bg != null) {
-                            com.lxmf.messenger.reticulum.protocol.IconAppearance(
-                                iconName = name,
-                                foregroundColor = fg,
-                                backgroundColor = bg,
-                            )
-                        } else {
-                            null
-                        }
-                    }
-
-                val result = reticulumProtocol.storeOwnTelemetry(locationJson, iconAppearance)
-                if (result.isSuccess) {
-                    Log.d(TAG, "📍 Host self-location stored in collected_telemetry")
-                } else {
-                    Log.w(TAG, "Failed to store host self-location: ${result.exceptionOrNull()?.message}")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error storing host self-location", e)
-            }
+        private suspend fun isLocalDestination(collectorHash: String): Boolean {
+            val localHash = identityRepository.getActiveIdentitySync()?.destinationHash ?: return false
+            return collectorHash.equals(localHash, ignoreCase = true)
         }
 
         /**
@@ -658,19 +586,6 @@ class TelemetryCollectorManager
                     return TelemetrySendResult.NoLocationAvailable
                 }
 
-                // Get LXMF identity
-                val serviceProtocol =
-                    reticulumProtocol as? ServiceReticulumProtocol
-                        ?: return TelemetrySendResult.Error("Protocol not available")
-
-                val sourceIdentity =
-                    try {
-                        serviceProtocol.getLxmfIdentity().getOrNull()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to get LXMF identity", e)
-                        null
-                    } ?: return TelemetrySendResult.Error("No LXMF identity")
-
                 // Build location JSON using the location's actual capture time
                 // Fallback to current time if location.time is 0 (unknown)
                 val telemetryData =
@@ -684,9 +599,6 @@ class TelemetryCollectorManager
                         bearing = location.bearing,
                     )
                 val locationJson = Json.encodeToString(telemetryData)
-
-                // Convert collector hash to bytes
-                val collectorBytes = collectorHash.hexToByteArray()
 
                 // Get user's icon appearance for Sideband/MeshChat interoperability
                 val iconAppearance =
@@ -705,14 +617,33 @@ class TelemetryCollectorManager
                         }
                     }
 
-                // Send via protocol
+                // If the collector is ourselves, store locally instead of sending via network
                 val result =
-                    reticulumProtocol.sendLocationTelemetry(
-                        destinationHash = collectorBytes,
-                        locationJson = locationJson,
-                        sourceIdentity = sourceIdentity,
-                        iconAppearance = iconAppearance,
-                    )
+                    if (isLocalDestination(collectorHash)) {
+                        Log.d(TAG, "📍 Collector is self, storing own telemetry locally")
+                        reticulumProtocol.storeOwnTelemetry(locationJson, iconAppearance)
+                    } else {
+                        // Get LXMF identity for network send
+                        val serviceProtocol =
+                            reticulumProtocol as? ServiceReticulumProtocol
+                                ?: return TelemetrySendResult.Error("Protocol not available")
+
+                        val sourceIdentity =
+                            try {
+                                serviceProtocol.getLxmfIdentity().getOrNull()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to get LXMF identity", e)
+                                null
+                            } ?: return TelemetrySendResult.Error("No LXMF identity")
+
+                        val collectorBytes = collectorHash.hexToByteArray()
+                        reticulumProtocol.sendLocationTelemetry(
+                            destinationHash = collectorBytes,
+                            locationJson = locationJson,
+                            sourceIdentity = sourceIdentity,
+                            iconAppearance = iconAppearance,
+                        )
+                    }
 
                 return if (result.isSuccess) {
                     // Update last send time
