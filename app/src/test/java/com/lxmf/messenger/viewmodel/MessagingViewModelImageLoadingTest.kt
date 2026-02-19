@@ -133,6 +133,9 @@ class MessagingViewModelImageLoadingTest {
         // Mock activeConversationManager
         every { activeConversationManager.setActive(any()) } just Runs
 
+        // Mock settingsRepository
+        every { settingsRepository.messageFontScaleFlow } returns flowOf(1.0f)
+
         // Mock identityRepository
         coEvery { identityRepository.getActiveIdentitySync() } returns null
 
