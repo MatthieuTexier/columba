@@ -141,6 +141,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -202,6 +203,7 @@ private fun LinkifiedMessageText(
     text: String,
     isFromMe: Boolean,
     modifier: Modifier = Modifier,
+    fontScale: Float = 1.0f,
 ) {
     val context = LocalContext.current
     val viewConfiguration = LocalViewConfiguration.current
@@ -263,9 +265,11 @@ private fun LinkifiedMessageText(
 
     var layoutResult: TextLayoutResult? by remember { mutableStateOf(null) }
 
+    val scaledFontSize = MaterialTheme.typography.bodyLarge.fontSize * fontScale
+
     Text(
         text = annotatedText,
-        style = MaterialTheme.typography.bodyLarge,
+        style = MaterialTheme.typography.bodyLarge.copy(fontSize = scaledFontSize),
         color = textColor,
         onTextLayout = { layoutResult = it },
         modifier =
@@ -390,6 +394,11 @@ fun MessagingScreen(
     val isContactSaved by viewModel.isContactSaved.collectAsStateWithLifecycle()
     var showSyncStatusSheet by remember { mutableStateOf(false) }
     val syncStatusSheetState = rememberModalBottomSheetState()
+
+    // Message font scale (pinch-to-zoom)
+    val messageFontScale by viewModel.messageFontScale.collectAsStateWithLifecycle()
+    var currentFontScale by remember { mutableStateOf(1.0f) }
+    LaunchedEffect(messageFontScale) { currentFontScale = messageFontScale }
 
     // File attachment state
     val selectedFileAttachments by viewModel.selectedFileAttachments.collectAsStateWithLifecycle()
@@ -1104,6 +1113,7 @@ fun MessagingScreen(
                                             peerName = peerName,
                                             syncProgress = syncProgress,
                                             isImageLoading = needsImageLoading,
+                                            fontScale = currentFontScale,
                                             onViewDetails = onViewMessageDetails,
                                             onRetry = { viewModel.retryFailedMessage(message.id) },
                                             onFileAttachmentTap = { messageId, fileIndex, filename ->
@@ -1503,6 +1513,7 @@ fun MessageBubble(
     peerName: String = "",
     syncProgress: SyncProgress = SyncProgress.Idle,
     isImageLoading: Boolean = false,
+    fontScale: Float = 1.0f,
     onViewDetails: (messageId: String) -> Unit = {},
     onRetry: () -> Unit = {},
     onFileAttachmentTap: (messageId: String, fileIndex: Int, filename: String) -> Unit = { _, _, _ -> },
@@ -1917,6 +1928,7 @@ fun MessageBubble(
                         LinkifiedMessageText(
                             text = message.content,
                             isFromMe = isFromMe,
+                            fontScale = fontScale,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
