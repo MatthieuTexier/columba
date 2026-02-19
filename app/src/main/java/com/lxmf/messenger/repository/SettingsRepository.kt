@@ -141,7 +141,7 @@ class SettingsRepository
             val TELEMETRY_HOST_MODE_ENABLED = booleanPreferencesKey("telemetry_host_mode_enabled")
             val TELEMETRY_ALLOWED_REQUESTERS = stringSetPreferencesKey("telemetry_allowed_requesters")
 
-            // Message font scale (pinch-to-zoom in conversation view)
+            // Message font scale (text size dialog in conversation view)
             val MESSAGE_FONT_SCALE = floatPreferencesKey("message_font_scale")
         }
 
@@ -1821,7 +1821,7 @@ class SettingsRepository
             )
         }
 
-        // Message font scale (pinch-to-zoom)
+        // Message font scale (text size dialog)
 
         /**
          * Flow of the message font scale factor.

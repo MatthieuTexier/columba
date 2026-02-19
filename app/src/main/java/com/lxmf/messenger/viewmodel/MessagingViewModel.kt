@@ -245,7 +245,7 @@ class MessagingViewModel
                 peerHash?.let { linkStates[it] }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-        // Message font scale (pinch-to-zoom in conversation view)
+        // Message font scale (text size dialog in conversation view)
         val messageFontScale: StateFlow<Float> =
             settingsRepository.messageFontScaleFlow
                 .stateIn(
