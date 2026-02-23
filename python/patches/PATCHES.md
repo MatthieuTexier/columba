@@ -52,17 +52,20 @@ with open(ratchets_path, "rb") as ratchets_file:
 
 ### 2. `RNS/__init__.py`
 
-**Lines Fixed**: 149-151 (log function)
+**Lines Fixed**: 149-151 (log function), imports (Discovery module)
 
 **Problem**:
 - Has `.close()` but not exception-safe
 - Logging is called very frequently throughout RNS
 - File handle leaks can accumulate quickly
+- **Missing `from .Discovery import InterfaceAnnouncer` import** — breaks RNS 1.1.x
+  interface discovery (`module 'RNS' has no attribute 'Discovery'`)
 
 **Impact**:
 - Every log message to file opens a new file handle
 - High-frequency logging scenarios (DEBUG/EXTREME levels) are especially vulnerable
 - Can exhaust file descriptors under heavy logging
+- Without the Discovery import, enabling interface discovery crashes Reticulum init
 
 **Fix**:
 ```python
@@ -75,6 +78,9 @@ file.close()  # If exception in write(), never reached
 with open(logfile, "a") as file:
     file.write(logstring+"\n")
 # File always closed, even on exception
+
+# Added missing import (required by RNS 1.1.x):
+from .Discovery import InterfaceAnnouncer
 ```
 
 ## Additional Files With Issues (Not Patched Yet)

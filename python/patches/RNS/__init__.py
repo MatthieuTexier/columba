@@ -38,6 +38,8 @@
 # - Converted open()/write()/close() pattern to context manager (with statement)
 # - Ensures log file is properly closed even if exceptions occur during write
 # - Prevents file descriptor leaks in high-frequency logging scenarios
+# - Added missing `from .Discovery import InterfaceAnnouncer` import
+#   (required for RNS 1.1.x interface discovery to work)
 #
 # Original issue: Line 149-151 used explicit open/close which is not exception-safe
 # Logging is called frequently, so file handle leaks can accumulate quickly
@@ -62,6 +64,7 @@ from .Link import Link, RequestReceipt
 from .Channel import MessageBase
 from .Buffer import Buffer, RawChannelReader, RawChannelWriter
 from .Transport import Transport
+from .Discovery import InterfaceAnnouncer
 from .Destination import Destination
 from .Packet import Packet
 from .Packet import PacketReceipt
