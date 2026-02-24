@@ -130,7 +130,8 @@ object InputValidator {
         // Safe conversion
         return try {
             val bytes =
-                cleaned.chunked(2)
+                cleaned
+                    .chunked(2)
                     .map { it.toInt(16).toByte() }
                     .toByteArray()
             ValidationResult.Success(bytes)
@@ -168,7 +169,8 @@ object InputValidator {
         // Safe conversion
         return try {
             val bytes =
-                cleaned.chunked(2)
+                cleaned
+                    .chunked(2)
                     .map { it.toInt(16).toByte() }
                     .toByteArray()
             ValidationResult.Success(bytes)
@@ -280,7 +282,23 @@ object InputValidator {
      * @return ValidationResult.Success with cleaned host, or ValidationResult.Error
      */
     fun validateHostname(host: String): ValidationResult<String> {
-        val cleaned = host.trim()
+        // Strip URI scheme prefixes — users sometimes paste full URLs instead of bare hostnames
+        var cleaned =
+            host
+                .trim()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .removeSuffix("/")
+                .split("/")
+                .first() // Strip any path component after the hostname
+
+        // Strip trailing :port (e.g. "example.com:8080" → "example.com")
+        // IPv6 addresses always have multiple colons; hostname:port has exactly one.
+        // This is safer than relying on IPV6_REGEX which may not cover all compressed forms.
+        val colonCount = cleaned.count { it == ':' }
+        if (colonCount == 1 && cleaned.matches(Regex("^.+:\\d+$"))) {
+            cleaned = cleaned.substringBeforeLast(":")
+        }
 
         return when {
             cleaned.isEmpty() ->
@@ -446,13 +464,12 @@ object InputValidator {
      * @param paramName The parameter name to validate
      * @return ValidationResult.Success if whitelisted, or ValidationResult.Error
      */
-    fun validateConfigParameter(paramName: String): ValidationResult<String> {
-        return if (paramName in ALLOWED_INTERFACE_PARAMS) {
+    fun validateConfigParameter(paramName: String): ValidationResult<String> =
+        if (paramName in ALLOWED_INTERFACE_PARAMS) {
             ValidationResult.Success(paramName)
         } else {
             ValidationResult.Error("Unknown configuration parameter: $paramName")
         }
-    }
 
     // ========== BLE VALIDATION ==========
 
@@ -462,13 +479,12 @@ object InputValidator {
      * @param data The BLE data packet
      * @return ValidationResult.Success if within size limits, or ValidationResult.Error
      */
-    fun validateBlePacketSize(data: ByteArray): ValidationResult<ByteArray> {
-        return if (data.size > MAX_BLE_PACKET_SIZE) {
+    fun validateBlePacketSize(data: ByteArray): ValidationResult<ByteArray> =
+        if (data.size > MAX_BLE_PACKET_SIZE) {
             ValidationResult.Error("BLE packet too large (${data.size} bytes, max $MAX_BLE_PACKET_SIZE)")
         } else {
             ValidationResult.Success(data)
         }
-    }
 
     // ========== TEXT SANITIZATION ==========
 
@@ -488,13 +504,12 @@ object InputValidator {
     fun sanitizeText(
         text: String,
         maxLength: Int,
-    ): String {
-        return text
+    ): String =
+        text
             .trim()
             .replace(Regex("\\p{C}"), "") // Remove control characters
             .replace(Regex("\\s+"), " ") // Normalize whitespace
             .take(maxLength)
-    }
 
     /**
      * Extension function for safe hex string to byte array conversion.
@@ -523,7 +538,8 @@ object InputValidator {
 
         return try {
             val bytes =
-                cleaned.chunked(2)
+                cleaned
+                    .chunked(2)
                     .map { it.toInt(16).toByte() }
                     .toByteArray()
             Result.success(bytes)
@@ -537,7 +553,5 @@ object InputValidator {
      *
      * @return Lowercase hex string representation
      */
-    fun ByteArray.toHexString(): String {
-        return this.joinToString("") { "%02x".format(it) }
-    }
+    fun ByteArray.toHexString(): String = this.joinToString("") { "%02x".format(it) }
 }

@@ -30,7 +30,8 @@ class InterfaceRepository
          * Corrupted interfaces are logged and skipped.
          */
         val allInterfaces: Flow<List<InterfaceConfig>> =
-            interfaceDao.getAllInterfaces()
+            interfaceDao
+                .getAllInterfaces()
                 .map { entities -> entities.mapNotNull { safeEntityToConfig(it) } }
 
         /**
@@ -38,20 +39,20 @@ class InterfaceRepository
          * Corrupted interfaces are logged and skipped.
          */
         val enabledInterfaces: Flow<List<InterfaceConfig>> =
-            interfaceDao.getEnabledInterfaces()
+            interfaceDao
+                .getEnabledInterfaces()
                 .map { entities -> entities.mapNotNull { safeEntityToConfig(it) } }
 
         /**
          * Safely convert an entity to config, returning null on error.
          */
-        private fun safeEntityToConfig(entity: InterfaceEntity): InterfaceConfig? {
-            return try {
+        private fun safeEntityToConfig(entity: InterfaceEntity): InterfaceConfig? =
+            try {
                 entityToConfig(entity)
             } catch (e: Exception) {
                 Log.e(TAG, "Skipping corrupted interface '${entity.name}': ${e.message}")
                 null
             }
-        }
 
         /**
          * Get all interface entities (for UI display).
@@ -69,17 +70,20 @@ class InterfaceRepository
          * discovered interfaces are connected (RNS 1.1.0+ bootstrap feature).
          */
         val bootstrapInterfaceNames: Flow<List<String>> =
-            interfaceDao.getEnabledInterfaces()
+            interfaceDao
+                .getEnabledInterfaces()
                 .map { entities ->
-                    entities.filter { entity ->
-                        entity.type == "TCPClient" && entity.enabled &&
-                            try {
-                                org.json.JSONObject(entity.configJson).optBoolean("bootstrap_only", false)
-                            } catch (e: Exception) {
-                                android.util.Log.v("InterfaceRepository", "Failed to parse configJson for ${entity.name}", e)
-                                false
-                            }
-                    }.map { it.name }
+                    entities
+                        .filter { entity ->
+                            entity.type == "TCPClient" &&
+                                entity.enabled &&
+                                try {
+                                    org.json.JSONObject(entity.configJson).optBoolean("bootstrap_only", false)
+                                } catch (e: Exception) {
+                                    android.util.Log.v("InterfaceRepository", "Failed to parse configJson for ${entity.name}", e)
+                                    false
+                                }
+                        }.map { it.name }
                 }
 
         /**
@@ -95,9 +99,7 @@ class InterfaceRepository
         /**
          * Get a specific interface by ID.
          */
-        fun getInterfaceById(id: Long): Flow<InterfaceEntity?> {
-            return interfaceDao.getInterfaceById(id)
-        }
+        fun getInterfaceById(id: Long): Flow<InterfaceEntity?> = interfaceDao.getInterfaceById(id)
 
         /**
          * Insert a new interface configuration.
@@ -176,8 +178,8 @@ class InterfaceRepository
          *
          * @throws IllegalStateException if JSON is corrupted or invalid
          */
-        fun entityToConfig(entity: InterfaceEntity): InterfaceConfig {
-            return try {
+        fun entityToConfig(entity: InterfaceEntity): InterfaceConfig =
+            try {
                 val json = JSONObject(entity.configJson)
 
                 when (entity.type) {
@@ -219,17 +221,18 @@ class InterfaceRepository
                     }
 
                     "TCPClient" -> {
-                        val targetHost = json.getString("target_host")
+                        val rawHost = json.getString("target_host")
                         val targetPort = json.getInt("target_port")
 
-                        // Validate hostname
-                        when (val hostResult = InputValidator.validateHostname(targetHost)) {
-                            is ValidationResult.Error -> {
-                                Log.e(TAG, "Invalid target host in database: $targetHost - ${hostResult.message}")
-                                error("Invalid target host: $targetHost")
+                        // Validate hostname (strips scheme prefixes like http://)
+                        val targetHost =
+                            when (val hostResult = InputValidator.validateHostname(rawHost)) {
+                                is ValidationResult.Error -> {
+                                    Log.e(TAG, "Invalid target host in database: $rawHost - ${hostResult.message}")
+                                    error("Invalid target host: $rawHost")
+                                }
+                                is ValidationResult.Success -> hostResult.value
                             }
-                            else -> {}
-                        }
 
                         // Validate port
                         if (targetPort !in 1..65535) {
@@ -256,7 +259,7 @@ class InterfaceRepository
                     "RNode" -> {
                         val targetDeviceName = json.optString("target_device_name", "")
                         val connectionMode = json.optString("connection_mode", "classic")
-                        val tcpHost = json.optString("tcp_host", "").ifEmpty { null }
+                        var tcpHost: String? = json.optString("tcp_host", "").ifEmpty { null }
                         val tcpPort = json.optInt("tcp_port", 7633)
                         val usbDeviceId = if (json.has("usb_device_id")) json.getInt("usb_device_id") else null
                         val usbVendorId = if (json.has("usb_vendor_id")) json.getInt("usb_vendor_id") else null
@@ -270,14 +273,15 @@ class InterfaceRepository
                                     Log.e(TAG, "Empty RNode TCP host in database")
                                     error("Empty RNode TCP host")
                                 }
-                                // Validate TCP host format
-                                when (val result = InputValidator.validateHostname(tcpHost)) {
-                                    is ValidationResult.Error -> {
-                                        Log.e(TAG, "Invalid RNode TCP host: $tcpHost - ${result.message}")
-                                        error("Invalid RNode TCP host: $tcpHost")
+                                // Validate TCP host format (strips scheme prefixes like http://)
+                                tcpHost =
+                                    when (val result = InputValidator.validateHostname(tcpHost)) {
+                                        is ValidationResult.Error -> {
+                                            Log.e(TAG, "Invalid RNode TCP host: $tcpHost - ${result.message}")
+                                            error("Invalid RNode TCP host: $tcpHost")
+                                        }
+                                        is ValidationResult.Success -> result.value
                                     }
-                                    else -> {}
-                                }
                                 // Validate TCP port
                                 if (tcpPort !in 1..65535) {
                                     Log.e(TAG, "Invalid RNode TCP port: $tcpPort")
@@ -323,27 +327,29 @@ class InterfaceRepository
                     }
 
                     "UDP" -> {
-                        val listenIp = json.optString("listen_ip", "0.0.0.0")
+                        val rawListenIp = json.optString("listen_ip", "0.0.0.0")
                         val listenPort = json.optInt("listen_port", 4242)
-                        val forwardIp = json.optString("forward_ip", "255.255.255.255")
+                        val rawForwardIp = json.optString("forward_ip", "255.255.255.255")
                         val forwardPort = json.optInt("forward_port", 4242)
 
-                        // Validate IPs
-                        when (val listenIpResult = InputValidator.validateHostname(listenIp)) {
-                            is ValidationResult.Error -> {
-                                Log.e(TAG, "Invalid listen IP in database: $listenIp - ${listenIpResult.message}")
-                                error("Invalid listen IP: $listenIp")
+                        // Validate IPs (strips scheme prefixes like http://)
+                        val listenIp =
+                            when (val listenIpResult = InputValidator.validateHostname(rawListenIp)) {
+                                is ValidationResult.Error -> {
+                                    Log.e(TAG, "Invalid listen IP in database: $rawListenIp - ${listenIpResult.message}")
+                                    error("Invalid listen IP: $rawListenIp")
+                                }
+                                is ValidationResult.Success -> listenIpResult.value
                             }
-                            else -> {}
-                        }
 
-                        when (val forwardIpResult = InputValidator.validateHostname(forwardIp)) {
-                            is ValidationResult.Error -> {
-                                Log.e(TAG, "Invalid forward IP in database: $forwardIp - ${forwardIpResult.message}")
-                                error("Invalid forward IP: $forwardIp")
+                        val forwardIp =
+                            when (val forwardIpResult = InputValidator.validateHostname(rawForwardIp)) {
+                                is ValidationResult.Error -> {
+                                    Log.e(TAG, "Invalid forward IP in database: $rawForwardIp - ${forwardIpResult.message}")
+                                    error("Invalid forward IP: $rawForwardIp")
+                                }
+                                is ValidationResult.Success -> forwardIpResult.value
                             }
-                            else -> {}
-                        }
 
                         // Validate ports
                         if (listenPort !in 1..65535) {
@@ -392,17 +398,18 @@ class InterfaceRepository
                     }
 
                     "TCPServer" -> {
-                        val listenIp = json.optString("listen_ip", "0.0.0.0")
+                        val rawListenIp = json.optString("listen_ip", "0.0.0.0")
                         val listenPort = json.optInt("listen_port", 4242)
 
-                        // Validate listen IP
-                        when (val listenIpResult = InputValidator.validateHostname(listenIp)) {
-                            is ValidationResult.Error -> {
-                                Log.e(TAG, "Invalid listen IP in database: $listenIp - ${listenIpResult.message}")
-                                error("Invalid listen IP: $listenIp")
+                        // Validate listen IP (strips scheme prefixes like http://)
+                        val listenIp =
+                            when (val listenIpResult = InputValidator.validateHostname(rawListenIp)) {
+                                is ValidationResult.Error -> {
+                                    Log.e(TAG, "Invalid listen IP in database: $rawListenIp - ${listenIpResult.message}")
+                                    error("Invalid listen IP: $rawListenIp")
+                                }
+                                is ValidationResult.Success -> listenIpResult.value
                             }
-                            else -> {}
-                        }
 
                         // Validate port
                         if (listenPort !in 1..65535) {
@@ -428,16 +435,13 @@ class InterfaceRepository
                 Log.e(TAG, "Corrupted JSON in database for interface '${entity.name}': ${e.message}", e)
                 error("Corrupted interface configuration for '${entity.name}': ${e.message}")
             }
-        }
 
         /**
          * Find an RNode interface configured for a specific USB device ID.
          * Used to check if a USB device is already configured when it's plugged in.
          * @deprecated Use findRNodeByUsbVidPid instead - device IDs are runtime IDs that change
          */
-        suspend fun findRNodeByUsbDeviceId(usbDeviceId: Int): InterfaceEntity? {
-            return interfaceDao.findRNodeByUsbDeviceId(usbDeviceId)
-        }
+        suspend fun findRNodeByUsbDeviceId(usbDeviceId: Int): InterfaceEntity? = interfaceDao.findRNodeByUsbDeviceId(usbDeviceId)
 
         /**
          * Find an RNode interface by USB Vendor ID and Product ID.
@@ -462,17 +466,13 @@ class InterfaceRepository
          * Get an interface by ID (one-shot query, not Flow).
          * Useful for intent handling where we need immediate result.
          */
-        suspend fun getInterfaceByIdOnce(id: Long): InterfaceEntity? {
-            return interfaceDao.getInterfaceByIdOnce(id)
-        }
+        suspend fun getInterfaceByIdOnce(id: Long): InterfaceEntity? = interfaceDao.getInterfaceByIdOnce(id)
 
         /**
          * Find an interface by name.
          * Used to look up the database ID when navigating from the network status screen.
          */
-        suspend fun findInterfaceByName(name: String): InterfaceEntity? {
-            return interfaceDao.findInterfaceByName(name)
-        }
+        suspend fun findInterfaceByName(name: String): InterfaceEntity? = interfaceDao.findInterfaceByName(name)
 
         companion object {
             private const val TAG = "InterfaceRepository"
