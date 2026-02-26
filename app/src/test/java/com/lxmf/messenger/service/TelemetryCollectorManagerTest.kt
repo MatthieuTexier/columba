@@ -494,12 +494,14 @@ class TelemetryCollectorManagerTest {
                 manager.start()
 
                 collectorAddressFlow.value = selfHash
+                hostModeEnabledFlow.value = true
                 networkStatusFlow.value = NetworkStatus.READY
                 advanceUntilIdle()
 
                 val result = manager.sendTelemetryNow()
 
                 assertEquals(TelemetrySendResult.Success, result)
+                coVerify(atLeast = 1) { mockReticulumProtocol.setTelemetryCollectorMode(true) }
                 coVerify(exactly = 1) { mockReticulumProtocol.storeOwnTelemetry(any(), any()) }
                 coVerify(exactly = 0) {
                     mockReticulumProtocol.sendLocationTelemetry(any(), any(), any(), any())

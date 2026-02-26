@@ -622,6 +622,14 @@ class TelemetryCollectorManager
                 // If the collector is ourselves, store locally instead of sending via network
                 val result =
                     if (isLocalDestination(collectorHash)) {
+                        if (_isHostModeEnabled.value) {
+                            val hostModeSyncResult = reticulumProtocol.setTelemetryCollectorMode(true)
+                            if (hostModeSyncResult.isFailure) {
+                                val syncError = hostModeSyncResult.exceptionOrNull()?.message ?: "Unknown host mode sync error"
+                                Log.e(TAG, "❌ Failed to re-sync host mode before self telemetry store: $syncError")
+                                return TelemetrySendResult.Error("Failed to enable host mode: $syncError")
+                            }
+                        }
                         Log.d(TAG, "📍 Collector is self, storing own telemetry locally")
                         reticulumProtocol.storeOwnTelemetry(locationJson, iconAppearance)
                     } else {
