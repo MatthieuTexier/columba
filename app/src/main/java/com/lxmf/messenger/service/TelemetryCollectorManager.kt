@@ -184,6 +184,8 @@ class TelemetryCollectorManager
                     .collect { address ->
                         _collectorAddress.value = address
                         Log.d(TAG, "Collector address updated: ${address?.take(16) ?: "none"}")
+                        restartPeriodicSend()
+                        restartPeriodicRequest()
                     }
             }
             launch {
