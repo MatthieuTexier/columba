@@ -30,6 +30,10 @@ RETICULUM_AVAILABLE = False
 RNS = None
 LXMF = None
 
+# Max binary bytes to hex-encode inline in message JSON.
+# Larger attachments are written to staging files to prevent OOM in Kotlin JSON parsing.
+_MAX_INLINE_ATTACHMENT_BYTES = 2 * 1024 * 1024  # 2 MB
+
 
 
 
@@ -601,6 +605,20 @@ class ReticulumWrapper:
 
         # Don't initialize here - wait for explicit initialize() call
         log_info("ReticulumWrapper", "__init__", f"Created with storage path: {storage_path}")
+
+    def _write_attachment_staging(self, msg_hash, field_id, data_bytes):
+        """Write large attachment data to a staging file instead of hex-encoding inline.
+
+        Returns the absolute file path for Kotlin to read from.
+        """
+        staging_dir = os.path.join(os.path.dirname(self.storage_path), "cache", "attachment_staging")
+        os.makedirs(staging_dir, exist_ok=True)
+        file_path = os.path.join(staging_dir, f"{msg_hash}_{field_id}.bin")
+        with open(file_path, "wb") as f:
+            f.write(data_bytes)
+        log_info("ReticulumWrapper", "_write_attachment_staging",
+                 f"Wrote {len(data_bytes)} bytes to staging: {file_path}")
+        return file_path
 
     def set_ble_bridge(self, bridge):
         """
@@ -2988,14 +3006,9 @@ class ReticulumWrapper:
 
                                             # ✅ Check allowed requesters list (must be explicitly allowed)
                                             # allowlist values are canonicalized to lowercase 32-hex at source.
-                                            allowed_hashes = [
-                                                h.lower() for h in self.telemetry_allowed_requesters
-                                                if isinstance(h, str) and len(h) > 0
-                                            ]
-
-                                            if requester_hash not in allowed_hashes:
+                                            if requester_hash not in self.telemetry_allowed_requesters:
                                                 allowed_preview = ", ".join(
-                                                    f"{h[:16]}(len={len(h)})" for h in allowed_hashes[:5]
+                                                    f"{h[:16]}(len={len(h)})" for h in list(self.telemetry_allowed_requesters)[:5]
                                                 ) or "none"
                                                 log_info("ReticulumWrapper", "_on_lxmf_delivery",
                                                         f"📡 Telemetry request BLOCKED from {requester_hash[:16]} (not in allowed list; allowed={allowed_preview})")
@@ -3261,19 +3274,28 @@ class ReticulumWrapper:
                     # Extract LXMF fields (attachments, reactions, etc.)
                     if hasattr(lxmf_message, 'fields') and lxmf_message.fields:
                         fields_serialized = {}
+                        msg_hash = message_event.get('message_hash', 'unknown')
                         for key, value in lxmf_message.fields.items():
                             if key == 5 and isinstance(value, list):
                                 # Field 5: file attachments
                                 serialized_attachments = []
-                                for attachment in value:
+                                for i, attachment in enumerate(value):
                                     if isinstance(attachment, (list, tuple)) and len(attachment) >= 2:
                                         filename, file_data = attachment[0], attachment[1]
                                         if isinstance(file_data, bytes):
-                                            serialized_attachments.append({
-                                                'filename': str(filename),
-                                                'data': file_data.hex(),
-                                                'size': len(file_data)
-                                            })
+                                            if len(file_data) > _MAX_INLINE_ATTACHMENT_BYTES:
+                                                temp_path = self._write_attachment_staging(msg_hash, f"f5_{i}", file_data)
+                                                serialized_attachments.append({
+                                                    'filename': str(filename),
+                                                    'file_path': temp_path,
+                                                    'size': len(file_data)
+                                                })
+                                            else:
+                                                serialized_attachments.append({
+                                                    'filename': str(filename),
+                                                    'data': file_data.hex(),
+                                                    'size': len(file_data)
+                                                })
                                 if serialized_attachments:
                                     fields_serialized['5'] = serialized_attachments
                             elif key == 16 and isinstance(value, dict):
@@ -3285,7 +3307,11 @@ class ReticulumWrapper:
                             elif key in (6, 7) and isinstance(value, (list, tuple)) and len(value) >= 2:
                                 # Field 6/7: image/audio
                                 if isinstance(value[1], bytes):
-                                    fields_serialized[str(key)] = [value[0], value[1].hex()]
+                                    if len(value[1]) > _MAX_INLINE_ATTACHMENT_BYTES:
+                                        temp_path = self._write_attachment_staging(msg_hash, f"f{key}", value[1])
+                                        fields_serialized[str(key)] = [value[0], None, temp_path]
+                                    else:
+                                        fields_serialized[str(key)] = [value[0], value[1].hex()]
                             else:
                                 fields_serialized[str(key)] = str(value)
                         if fields_serialized:
@@ -7046,6 +7072,25 @@ class ReticulumWrapper:
             log_error("ReticulumWrapper", "get_interface_stats",
                      f"Error getting interface stats: {e}")
             return None
+
+    # ==================== AutoInterface Hot-Add ====================
+
+    def restart_auto_interface(self) -> str:
+        """
+        Hot-add new network interfaces to an existing AutoInterface.
+
+        Delegates to auto_interface_manager.hot_add_interfaces() which scans for
+        network interfaces not yet adopted and adds them with full multicast
+        discovery + data server setup. See that module for details.
+
+        Returns:
+            JSON string with result: {"success": true/false, "action": "...", ...}
+        """
+        if not RETICULUM_AVAILABLE or not self.reticulum:
+            return json.dumps({"success": False, "error": "not initialized"})
+
+        from auto_interface_manager import hot_add_interfaces
+        return hot_add_interfaces()
 
     # ==================== RNS 1.1.x Interface Discovery ====================
 

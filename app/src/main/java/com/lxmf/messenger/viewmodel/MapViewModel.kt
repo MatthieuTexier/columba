@@ -292,9 +292,7 @@ class MapViewModel
                     identityRepository.activeIdentity,
                 ) { locations, contactList, announceList, _, activeIdentity ->
                     val currentTime = System.currentTimeMillis()
-                    val localHashes =
-                        listOfNotNull(activeIdentity?.destinationHash, activeIdentity?.identityHash)
-                            .map { it.lowercase() }
+                    val localHashes = telemetryCollectorManager.getLocalIdentityHashes()
 
                     // Create lookup maps from contacts
                     val contactMap = contactList.associateBy { it.destinationHash }
@@ -309,12 +307,7 @@ class MapViewModel
                     locations.mapNotNull { loc ->
                         // Ignore self-echo telemetry entries from collector streams.
                         val senderHash = loc.senderHash.lowercase()
-                        val isSelfEcho =
-                            localHashes.any { localHash ->
-                                senderHash == localHash ||
-                                    senderHash.startsWith(localHash) ||
-                                    localHash.startsWith(senderHash)
-                            }
+                        val isSelfEcho = localHashes.any { localHash -> senderHash == localHash }
                         if (isSelfEcho) {
                             return@mapNotNull null
                         }
@@ -357,7 +350,7 @@ class MapViewModel
                             longitude = loc.longitude,
                             accuracy = loc.accuracy,
                             // Display sender emission timestamp in UI (requested behavior).
-                            // Fresh/stale state remains based on receivedAt above.
+                            // Freshness/staleness is based on sender emission time (timestamp) per calculateMarkerState above.
                             timestamp = loc.timestamp,
                             expiresAt = loc.expiresAt,
                             state = markerState,
