@@ -467,6 +467,25 @@ fun MapScreen(
         }
     }
 
+    // Consume pending focus from "Locate on Map" — find the existing contact marker and fly to it
+    val pendingFocusContact by viewModel.pendingFocusContact.collectAsState()
+    LaunchedEffect(pendingFocusContact, mapLibreMap, state.contactMarkers) {
+        val map = mapLibreMap ?: return@LaunchedEffect
+        val hash = pendingFocusContact ?: return@LaunchedEffect
+        val marker = state.contactMarkers.firstOrNull {
+            it.destinationHash.equals(hash, ignoreCase = true)
+        } ?: return@LaunchedEffect
+        val cameraPosition =
+            CameraPosition
+                .Builder()
+                .target(LatLng(marker.latitude, marker.longitude))
+                .zoom(15.0)
+                .build()
+        map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
+        hasInitiallyCentered = true
+        viewModel.consumePendingFocus()
+    }
+
     // Fall back to user location if no focus coordinates
     LaunchedEffect(mapLibreMap, state.userLocation != null) {
         val map = mapLibreMap ?: return@LaunchedEffect
