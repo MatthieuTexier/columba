@@ -34,6 +34,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,7 +47,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.lxmf.messenger.ui.components.BackgroundLocationPermissionBottomSheet
 import com.lxmf.messenger.ui.components.LocationPermissionBottomSheet
 import com.lxmf.messenger.ui.screens.settings.cards.AboutCard
 import com.lxmf.messenger.ui.screens.settings.cards.AutoAnnounceCard
@@ -107,9 +111,16 @@ fun SettingsScreen(
     var showCrashDialog by remember { mutableStateOf(false) }
     var pendingCrashReport by remember { mutableStateOf<CrashReport?>(null) }
 
+    // Background location permission state (for indicator in LocationSharingCard)
+    var hasBackgroundPermission by remember {
+        mutableStateOf(LocationPermissionManager.hasBackgroundLocationPermission(context))
+    }
+
     // Location permission state for telemetry collector
     var showTelemetryPermissionSheet by remember { mutableStateOf(false) }
+    var showTelemetryBackgroundSheet by remember { mutableStateOf(false) }
     val telemetryPermissionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val telemetryBackgroundSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // Track what action to take after permission is granted
     var pendingTelemetryAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -118,6 +129,7 @@ fun SettingsScreen(
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestPermission(),
         ) { granted ->
+            hasBackgroundPermission = granted
             if (granted) {
                 pendingTelemetryAction?.invoke()
             }
@@ -136,14 +148,25 @@ fun SettingsScreen(
                     pendingTelemetryAction?.invoke()
                     pendingTelemetryAction = null
                 } else {
-                    // Now request background before enabling telemetry
-                    telemetryBackgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    // Show custom bottom sheet before requesting background
+                    showTelemetryBackgroundSheet = true
                     // pendingTelemetryAction is preserved for the background launcher
                 }
             } else {
                 pendingTelemetryAction = null
             }
         }
+
+    // Refresh background permission state on lifecycle resume (e.g. returning from system settings)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasBackgroundPermission = LocationPermissionManager.hasBackgroundLocationPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Check for pending crash report on launch
     LaunchedEffect(Unit) {
@@ -300,9 +323,9 @@ fun SettingsScreen(
                             if (LocationPermissionManager.hasTelemetryBackgroundPermission(context)) {
                                 viewModel.setTelemetryCollectorEnabled(true)
                             } else if (LocationPermissionManager.hasPermission(context)) {
-                                // Foreground location is granted, now request background access.
+                                // Foreground location is granted, show background permission sheet.
                                 pendingTelemetryAction = { viewModel.setTelemetryCollectorEnabled(true) }
-                                telemetryBackgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                                showTelemetryBackgroundSheet = true
                             } else {
                                 // Show permission sheet, then enable after permission granted
                                 pendingTelemetryAction = { viewModel.setTelemetryCollectorEnabled(true) }
@@ -345,6 +368,29 @@ fun SettingsScreen(
                     localIconName = state.iconName,
                     localIconForegroundColor = state.iconForegroundColor,
                     localIconBackgroundColor = state.iconBackgroundColor,
+                    // Background location permission indicator
+                    hasBackgroundLocationPermission = hasBackgroundPermission,
+                    onBackgroundPermissionClick = {
+                        if (hasBackgroundPermission) {
+                            // Already granted — open app info, guide user to Permissions > Location
+                            android.widget.Toast.makeText(
+                                context,
+                                "Go to Permissions > Location to change",
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.fromParts("package", context.packageName, null),
+                            )
+                            context.startActivity(intent)
+                        } else if (LocationPermissionManager.hasPermission(context)) {
+                            // Foreground granted but not background — show our custom sheet
+                            showTelemetryBackgroundSheet = true
+                        } else {
+                            // No foreground either — show foreground sheet first
+                            showTelemetryPermissionSheet = true
+                        }
+                    },
                 )
 
                 MapSourcesCard(
@@ -575,6 +621,21 @@ fun SettingsScreen(
                         )
                     }
                 },
+            )
+        }
+
+        // Background Location Permission Bottom Sheet for Telemetry Collector
+        if (showTelemetryBackgroundSheet && isLifecycleActive) {
+            BackgroundLocationPermissionBottomSheet(
+                onDismiss = {
+                    showTelemetryBackgroundSheet = false
+                    pendingTelemetryAction = null
+                },
+                onRequestPermission = {
+                    showTelemetryBackgroundSheet = false
+                    telemetryBackgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                },
+                sheetState = telemetryBackgroundSheetState,
             )
         }
 

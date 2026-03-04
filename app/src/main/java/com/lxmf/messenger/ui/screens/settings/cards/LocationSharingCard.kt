@@ -117,6 +117,9 @@ fun LocationSharingCard(
     localIconName: String? = null,
     localIconForegroundColor: String? = null,
     localIconBackgroundColor: String? = null,
+    // Background location permission status
+    hasBackgroundLocationPermission: Boolean = false,
+    onBackgroundPermissionClick: () -> Unit = {},
 ) {
     var showDurationPicker by remember { mutableStateOf(false) }
     var showPrecisionPicker by remember { mutableStateOf(false) }
@@ -141,6 +144,57 @@ fun LocationSharingCard(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        // Background location permission status indicator
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onBackgroundPermissionClick)
+                    .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.LocationOn,
+                contentDescription = null,
+                tint =
+                    if (hasBackgroundLocationPermission) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
+                modifier = Modifier.size(18.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text =
+                        if (hasBackgroundLocationPermission) {
+                            "Background location: Always"
+                        } else {
+                            "Background location: While using"
+                        },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text =
+                        if (hasBackgroundLocationPermission) {
+                            "Tap to change (Permissions > Location)"
+                        } else {
+                            "Tap to enable background location"
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "Change",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
 
         // Active sessions section (only shown when enabled and there are sessions)
         if (enabled && activeSessions.isNotEmpty()) {
