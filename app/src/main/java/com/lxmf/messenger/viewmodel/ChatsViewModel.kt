@@ -3,8 +3,8 @@ package com.lxmf.messenger.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lxmf.messenger.data.db.dao.ReceivedLocationDao
 import com.lxmf.messenger.data.repository.ContactRepository
+import com.lxmf.messenger.data.repository.ReceivedLocationRepository
 import com.lxmf.messenger.data.repository.Conversation
 import com.lxmf.messenger.data.repository.ConversationRepository
 import com.lxmf.messenger.service.PropagationNodeManager
@@ -38,7 +38,7 @@ class ChatsViewModel
         private val conversationRepository: ConversationRepository,
         private val contactRepository: ContactRepository,
         private val propagationNodeManager: PropagationNodeManager,
-        private val receivedLocationDao: ReceivedLocationDao,
+        private val receivedLocationRepository: ReceivedLocationRepository,
     ) : ViewModel() {
         companion object {
             private const val TAG = "ChatsViewModel"
@@ -174,15 +174,6 @@ class ChatsViewModel
             }
 
         /**
-         * Get the latest known location for a peer.
-         * Returns a Pair(latitude, longitude) or null if no location is known.
-         */
-        suspend fun getContactLocation(peerHash: String): Pair<Double, Double>? {
-            val location = receivedLocationDao.getLatestLocationForSender(peerHash)
-            return location?.let { Pair(it.latitude, it.longitude) }
-        }
-
-        /**
          * Trigger a manual sync with the propagation node.
          */
         fun syncFromPropagationNode() {
@@ -195,4 +186,11 @@ class ChatsViewModel
                 }
             }
         }
+
+        /**
+         * Get the latest known, non-expired location for a peer.
+         * Returns a Pair(latitude, longitude) or null if no valid location is known.
+         */
+        suspend fun getContactLocation(peerHash: String): Pair<Double, Double>? =
+            receivedLocationRepository.getContactLocation(peerHash)
     }
