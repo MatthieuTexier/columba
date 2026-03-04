@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
@@ -92,6 +93,7 @@ import java.util.Locale
 fun ChatsScreen(
     onChatClick: (peerHash: String, peerName: String) -> Unit = { _, _ -> },
     onViewPeerDetails: (peerHash: String) -> Unit = {},
+    onLocateOnMap: (lat: Double, lon: Double, peerName: String) -> Unit = { _, _, _ -> },
     onNavigateToQrScanner: () -> Unit = {},
     viewModel: ChatsViewModel = hiltViewModel(),
     settingsViewModel: com.lxmf.messenger.viewmodel.SettingsViewModel = hiltViewModel(),
@@ -230,6 +232,14 @@ fun ChatsScreen(
                         val hapticFeedback = LocalHapticFeedback.current
                         var showMenu by remember { mutableStateOf(false) }
                         val isSaved by viewModel.isContactSaved(conversation.peerHash).collectAsState()
+                        var contactLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+
+                        // Fetch contact location when menu opens
+                        LaunchedEffect(showMenu) {
+                            if (showMenu) {
+                                contactLocation = viewModel.getContactLocation(conversation.peerHash)
+                            }
+                        }
 
                         val draftText = draftsMap[conversation.peerHash]
 
@@ -293,6 +303,13 @@ fun ChatsScreen(
                                 onViewDetails = {
                                     showMenu = false
                                     onViewPeerDetails(conversation.peerHash)
+                                },
+                                hasLocation = contactLocation != null,
+                                onLocateOnMap = {
+                                    showMenu = false
+                                    contactLocation?.let { (lat, lon) ->
+                                        onLocateOnMap(lat, lon, conversation.displayName)
+                                    }
                                 },
                             )
                         }
@@ -544,6 +561,8 @@ fun ConversationContextMenu(
     onMarkAsUnread: () -> Unit,
     onDeleteConversation: () -> Unit,
     onViewDetails: () -> Unit,
+    hasLocation: Boolean = false,
+    onLocateOnMap: () -> Unit = {},
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -602,6 +621,23 @@ fun ConversationContextMenu(
             },
             onClick = onViewDetails,
         )
+
+        // Locate on map (only shown if contact has a known location)
+        if (hasLocation) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                text = {
+                    Text("Locate on Map")
+                },
+                onClick = onLocateOnMap,
+            )
+        }
 
         HorizontalDivider()
 

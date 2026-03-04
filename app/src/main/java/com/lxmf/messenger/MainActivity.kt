@@ -1031,6 +1031,10 @@ fun ColumbaNavigation(
                                 val encodedHash = Uri.encode(peerHash)
                                 navController.navigate("announce_detail/$encodedHash")
                             },
+                            onLocateOnMap = { lat, lon, peerName ->
+                                val encodedLabel = Uri.encode(peerName)
+                                navController.navigate("map_focus?lat=$lat&lon=$lon&label=$encodedLabel")
+                            },
                             onNavigateToQrScanner = {
                                 navController.navigate("qr_scanner")
                             },
