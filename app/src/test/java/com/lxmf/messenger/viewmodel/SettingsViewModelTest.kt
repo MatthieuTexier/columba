@@ -174,6 +174,7 @@ class SettingsViewModelTest {
         every { settingsRepository.lastTelemetryRequestTimeFlow } returns flowOf(null)
         every { settingsRepository.telemetryHostModeEnabledFlow } returns flowOf(false)
         every { settingsRepository.telemetryAllowedRequestersFlow } returns flowOf(emptySet<String>())
+        every { settingsRepository.mapMarkerDeclutterEnabledFlow } returns flowOf(true)
         every { settingsRepository.includePrereleaseUpdates } returns MutableStateFlow(false)
         coEvery { settingsRepository.getLastUpdateCheckTime() } returns System.currentTimeMillis()
 

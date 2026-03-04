@@ -183,6 +183,7 @@ class SettingsViewModelIncomingMessageLimitTest {
         every { settingsRepository.lastTelemetryRequestTimeFlow } returns MutableStateFlow<Long?>(null)
         every { settingsRepository.telemetryHostModeEnabledFlow } returns MutableStateFlow(false)
         every { settingsRepository.telemetryAllowedRequestersFlow } returns MutableStateFlow(emptySet())
+        every { settingsRepository.mapMarkerDeclutterEnabledFlow } returns MutableStateFlow(true)
         every { settingsRepository.includePrereleaseUpdates } returns MutableStateFlow(false)
         coEvery { settingsRepository.getLastUpdateCheckTime() } returns System.currentTimeMillis()
 
