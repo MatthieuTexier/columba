@@ -1090,6 +1090,16 @@ fun ColumbaNavigation(
                                 val encodedHash = Uri.encode(destinationHash)
                                 navController.navigate("announce_detail/$encodedHash")
                             },
+                            onLocateOnMap = { peerHash ->
+                                mapViewModel.focusOnContact(peerHash)
+                                navController.navigate(Screen.Map.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
                             onNavigateToQrScanner = {
                                 navController.navigate("qr_scanner")
                             },
