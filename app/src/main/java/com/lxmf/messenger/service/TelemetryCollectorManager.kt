@@ -318,8 +318,7 @@ class TelemetryCollectorManager
             periodicRequestJob = null
         }
 
-        private fun shouldTrackLocation(): Boolean =
-            _isEnabled.value && _collectorAddress.value != null
+        private fun shouldTrackLocation(): Boolean = _isEnabled.value && _collectorAddress.value != null
 
         /**
          * Update the collector address.
