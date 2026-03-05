@@ -579,6 +579,13 @@ class ReticulumWrapper:
         self._last_interface_reinit_attempt = 0.0  # Timestamp of last reinit attempt
         self._interface_reinit_interval = 60.0  # Retry failed interfaces every 60 seconds
 
+        # TCP interface health monitoring
+        # Tracks rxb per interface to detect half-open sockets (online but no data)
+        self._tcp_iface_last_rxb = {}  # {iface_name: rxb} from previous check
+        self._tcp_iface_stale_cycles = {}  # {iface_name: consecutive_stale_count}
+        self._last_tcp_health_check = 0.0
+        self._tcp_health_check_interval = 120.0  # Check every 2 minutes
+
         # Set global instance so AndroidBLEDriver can access it
         _global_wrapper_instance = self
 
@@ -5581,7 +5588,7 @@ class ReticulumWrapper:
         """
         Background loop that performs periodic maintenance tasks:
         1. Checks for failed interfaces and attempts reinit
-        2. Could be extended for other maintenance tasks
+        2. TCP interface health monitoring (half-open socket detection)
 
         Runs while self.initialized is True.
         """
@@ -5589,12 +5596,18 @@ class ReticulumWrapper:
         while self.initialized:
             time.sleep(30)  # Reduced from 1s — only does work when failed_interfaces is non-empty
 
-            # Check if it's time to retry failed interfaces
             now = time.time()
+
+            # Check if it's time to retry failed interfaces
             if (len(self.failed_interfaces) > 0 and
                 now - self._last_interface_reinit_attempt >= self._interface_reinit_interval):
                 self._retry_failed_interfaces()
                 self._last_interface_reinit_attempt = now
+
+            # TCP interface health check
+            if now - self._last_tcp_health_check >= self._tcp_health_check_interval:
+                self._check_tcp_interface_health()
+                self._last_tcp_health_check = now
 
         log_debug("ReticulumWrapper", "_maintenance_loop", "Maintenance loop exiting (not initialized)")
 
@@ -5754,7 +5767,6 @@ class ReticulumWrapper:
                 iface.online = False
         except Exception as e:
             log_warning("ReticulumWrapper", TAG, f"Force reconnect failed for {name}: {e}")
-
     def _retry_failed_interfaces(self):
         """
         Attempt to reinitialize interfaces that failed during startup.
