@@ -579,6 +579,13 @@ class ReticulumWrapper:
         self._last_interface_reinit_attempt = 0.0  # Timestamp of last reinit attempt
         self._interface_reinit_interval = 60.0  # Retry failed interfaces every 60 seconds
 
+        # TCP interface health monitoring
+        # Tracks rxb per interface to detect half-open sockets (online but no data)
+        self._tcp_iface_last_rxb = {}  # {iface_name: rxb} from previous check
+        self._tcp_iface_stale_cycles = {}  # {iface_name: consecutive_stale_count}
+        self._last_tcp_health_check = 0.0
+        self._tcp_health_check_interval = 120.0  # Check every 2 minutes
+
         # Set global instance so AndroidBLEDriver can access it
         _global_wrapper_instance = self
 
@@ -5557,7 +5564,7 @@ class ReticulumWrapper:
         """
         Background loop that performs periodic maintenance tasks:
         1. Checks for failed interfaces and attempts reinit
-        2. Could be extended for other maintenance tasks
+        2. TCP interface health monitoring (half-open socket detection)
 
         Runs while self.initialized is True.
         """
@@ -5565,14 +5572,100 @@ class ReticulumWrapper:
         while self.initialized:
             time.sleep(30)  # Reduced from 1s — only does work when failed_interfaces is non-empty
 
-            # Check if it's time to retry failed interfaces
             now = time.time()
+
+            # Check if it's time to retry failed interfaces
             if (len(self.failed_interfaces) > 0 and
                 now - self._last_interface_reinit_attempt >= self._interface_reinit_interval):
                 self._retry_failed_interfaces()
                 self._last_interface_reinit_attempt = now
 
+            # TCP interface health check
+            if now - self._last_tcp_health_check >= self._tcp_health_check_interval:
+                self._check_tcp_interface_health()
+                self._last_tcp_health_check = now
+
         log_debug("ReticulumWrapper", "_maintenance_loop", "Maintenance loop exiting (not initialized)")
+
+    def _check_tcp_interface_health(self):
+        """
+        Diagnostic: log the state of each TCP interface to detect half-open sockets.
+
+        A half-open socket occurs when Android doze suspends TCP keepalives,
+        causing the remote server to close the connection while the local side
+        still believes it is online. The read_loop blocks on recv() indefinitely
+        because the socket has no timeout, so reconnect() is never triggered.
+
+        This method logs:
+        - online status, rxb/txb counters, socket timeout, reconnecting flag
+        - Whether rxb has changed since last check (stale = no new data)
+        - Consecutive stale cycles count (stale for multiple checks = likely dead)
+        """
+        TAG = "TCPHealthCheck"
+        try:
+            if not RETICULUM_AVAILABLE or not hasattr(RNS, 'Transport'):
+                return
+
+            from RNS.Interfaces.TCPInterface import TCPClientInterface
+
+            tcp_ifaces = [
+                iface for iface in RNS.Transport.interfaces
+                if isinstance(iface, TCPClientInterface)
+            ]
+
+            if not tcp_ifaces:
+                return
+
+            for iface in tcp_ifaces:
+                name = str(iface)
+                online = getattr(iface, 'online', None)
+                rxb = getattr(iface, 'rxb', 0)
+                txb = getattr(iface, 'txb', 0)
+                reconnecting = getattr(iface, 'reconnecting', None)
+                detached = getattr(iface, 'detached', None)
+
+                # Check socket state
+                sock = getattr(iface, 'socket', None)
+                sock_timeout = None
+                sock_fileno = None
+                if sock is not None:
+                    try:
+                        sock_timeout = sock.gettimeout()
+                        sock_fileno = sock.fileno()
+                    except Exception:
+                        sock_fileno = -1  # Socket likely closed
+
+                # Track rxb changes
+                prev_rxb = self._tcp_iface_last_rxb.get(name, None)
+                self._tcp_iface_last_rxb[name] = rxb
+
+                if prev_rxb is not None and rxb == prev_rxb and online:
+                    stale = self._tcp_iface_stale_cycles.get(name, 0) + 1
+                    self._tcp_iface_stale_cycles[name] = stale
+                else:
+                    stale = 0
+                    self._tcp_iface_stale_cycles[name] = 0
+
+                # Log level depends on staleness
+                if stale >= 2:
+                    log_warning("ReticulumWrapper", TAG,
+                        f"⚠️ {name}: online={online} but NO DATA for {stale} cycles "
+                        f"({stale * self._tcp_health_check_interval:.0f}s) — "
+                        f"possible half-open socket. "
+                        f"rxb={rxb}, txb={txb}, sock_timeout={sock_timeout}, "
+                        f"sock_fd={sock_fileno}, reconnecting={reconnecting}")
+                elif stale == 1:
+                    log_info("ReticulumWrapper", TAG,
+                        f"🔍 {name}: online={online}, rxb={rxb} (unchanged), "
+                        f"txb={txb}, sock_timeout={sock_timeout}, "
+                        f"sock_fd={sock_fileno}, reconnecting={reconnecting}")
+                else:
+                    log_debug("ReticulumWrapper", TAG,
+                        f"✓ {name}: online={online}, rxb={rxb}, txb={txb}, "
+                        f"sock_timeout={sock_timeout}, reconnecting={reconnecting}")
+
+        except Exception as e:
+            log_warning("ReticulumWrapper", TAG, f"Health check error: {e}")
 
     def _retry_failed_interfaces(self):
         """
