@@ -1766,9 +1766,26 @@ class ReticulumWrapper:
                     try:
                         from RNS.Interfaces.TCPInterface import TCPClientInterface
                         TCPClientInterface.SYNCHRONOUS_START = False
-                        log_info("ReticulumWrapper", "initialize", "✓ TCPClientInterface configured for async startup")
+
+                        # Monkey-patch connect() to add a recv timeout on the socket.
+                        # Without this, recv() in read_loop blocks forever on half-open
+                        # sockets (caused by Android doze suspending TCP keepalives).
+                        # With a timeout, a socket.timeout exception is raised after
+                        # TCP_RECV_TIMEOUT seconds of inactivity, which triggers the
+                        # existing reconnect() logic in read_loop's except handler.
+                        TCP_RECV_TIMEOUT = 300  # 5 minutes
+                        _original_tcp_connect = TCPClientInterface.connect
+                        def _patched_tcp_connect(self, initial=False):
+                            result = _original_tcp_connect(self, initial)
+                            if result and self.socket is not None:
+                                self.socket.settimeout(TCP_RECV_TIMEOUT)
+                            return result
+                        TCPClientInterface.connect = _patched_tcp_connect
+
+                        log_info("ReticulumWrapper", "initialize",
+                            f"✓ TCPClientInterface configured: async startup, recv timeout={TCP_RECV_TIMEOUT}s")
                     except (ImportError, AttributeError) as tcp_err:
-                        log_warning("ReticulumWrapper", "initialize", f"Could not configure async TCP startup: {tcp_err}")
+                        log_warning("ReticulumWrapper", "initialize", f"Could not configure TCP patches: {tcp_err}")
 
                 except ImportError as e:
                     RETICULUM_AVAILABLE = False
@@ -5580,6 +5597,163 @@ class ReticulumWrapper:
                 self._last_interface_reinit_attempt = now
 
         log_debug("ReticulumWrapper", "_maintenance_loop", "Maintenance loop exiting (not initialized)")
+
+    def _check_tcp_interface_health(self):
+        """
+        Diagnostic: log the state of each TCP interface to detect half-open sockets.
+
+        A half-open socket occurs when Android doze suspends TCP keepalives,
+        causing the remote server to close the connection while the local side
+        still believes it is online. The read_loop blocks on recv() indefinitely
+        because the socket has no timeout, so reconnect() is never triggered.
+
+        This method logs:
+        - online status, rxb/txb counters, socket timeout, reconnecting flag
+        - Whether rxb has changed since last check (stale = no new data)
+        - Consecutive stale cycles count (stale for multiple checks = likely dead)
+        """
+        TAG = "TCPHealthCheck"
+        try:
+            if not RETICULUM_AVAILABLE or not hasattr(RNS, 'Transport'):
+                return
+
+            from RNS.Interfaces.TCPInterface import TCPClientInterface
+
+            tcp_ifaces = [
+                iface for iface in RNS.Transport.interfaces
+                if isinstance(iface, TCPClientInterface)
+            ]
+
+            if not tcp_ifaces:
+                return
+
+            for iface in tcp_ifaces:
+                name = str(iface)
+                online = getattr(iface, 'online', None)
+                rxb = getattr(iface, 'rxb', 0)
+                txb = getattr(iface, 'txb', 0)
+                reconnecting = getattr(iface, 'reconnecting', None)
+                detached = getattr(iface, 'detached', None)
+
+                # Check socket state
+                sock = getattr(iface, 'socket', None)
+                sock_timeout = None
+                sock_fileno = None
+                if sock is not None:
+                    try:
+                        sock_timeout = sock.gettimeout()
+                        sock_fileno = sock.fileno()
+                    except Exception:
+                        sock_fileno = -1  # Socket likely closed
+
+                # Track rxb changes
+                prev_rxb = self._tcp_iface_last_rxb.get(name, None)
+                self._tcp_iface_last_rxb[name] = rxb
+
+                if prev_rxb is not None and rxb == prev_rxb and online:
+                    stale = self._tcp_iface_stale_cycles.get(name, 0) + 1
+                    self._tcp_iface_stale_cycles[name] = stale
+                else:
+                    stale = 0
+                    self._tcp_iface_stale_cycles[name] = 0
+
+                # Build log message
+                # Force reconnect at 3 cycles (6 min with no data while "online")
+                STALE_RECONNECT_THRESHOLD = 3
+                if stale >= STALE_RECONNECT_THRESHOLD and not reconnecting:
+                    msg = (f"🔌 {name}: online={online} but NO DATA for {stale} cycles "
+                        f"({stale * self._tcp_health_check_interval:.0f}s) — "
+                        f"forcing reconnection. "
+                        f"rxb={rxb}, txb={txb}, sock_timeout={sock_timeout}, "
+                        f"sock_fd={sock_fileno}")
+                    log_warning("ReticulumWrapper", TAG, msg)
+                    self._force_tcp_reconnect(iface)
+                    self._tcp_iface_stale_cycles[name] = 0
+                elif stale >= 2:
+                    msg = (f"⚠️ {name}: online={online} but NO DATA for {stale} cycles "
+                        f"({stale * self._tcp_health_check_interval:.0f}s) — "
+                        f"possible half-open socket. "
+                        f"rxb={rxb}, txb={txb}, sock_timeout={sock_timeout}, "
+                        f"sock_fd={sock_fileno}, reconnecting={reconnecting}")
+                    log_warning("ReticulumWrapper", TAG, msg)
+                elif stale == 1:
+                    msg = (f"🔍 {name}: online={online}, rxb={rxb} (unchanged), "
+                        f"txb={txb}, sock_timeout={sock_timeout}, "
+                        f"sock_fd={sock_fileno}, reconnecting={reconnecting}")
+                    log_info("ReticulumWrapper", TAG, msg)
+                else:
+                    msg = (f"✓ {name}: online={online}, rxb={rxb}, txb={txb}, "
+                        f"sock_timeout={sock_timeout}, reconnecting={reconnecting}")
+                    log_debug("ReticulumWrapper", TAG, msg)
+
+                # Persist to file (survives logcat buffer overflow)
+                self._append_tcp_health_log(msg)
+
+        except Exception as e:
+            log_warning("ReticulumWrapper", TAG, f"Health check error: {e}")
+
+    def _append_tcp_health_log(self, msg):
+        """Append a TCP health check entry to a persistent log file on device storage."""
+        try:
+            from datetime import datetime
+            log_path = os.path.join(self.storage_path, "tcp_health.log")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(log_path, "a") as f:
+                f.write(f"[{timestamp}] {msg}\n")
+            # Rotate: keep last 500 lines to avoid unbounded growth
+            try:
+                with open(log_path, "r") as f:
+                    lines = f.readlines()
+                if len(lines) > 500:
+                    with open(log_path, "w") as f:
+                        f.writelines(lines[-500:])
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _force_tcp_reconnect(self, iface):
+        """
+        Force a TCP interface to reconnect by closing the socket.
+
+        This is the corrective action when the watchdog detects a half-open socket
+        (online=True but no data received for multiple check cycles).
+
+        Strategy: close the socket so that the existing read_loop (blocked on recv)
+        gets an exception and follows its normal reconnect path. We reset the
+        `detached` flag so that the read_loop's exception handler calls reconnect()
+        instead of teardown().
+
+        This avoids race conditions from launching a parallel reconnect thread —
+        we let the existing RNS code handle reconnection through its normal flow.
+        """
+        TAG = "TCPHealthCheck"
+        name = str(iface)
+        try:
+            sock = getattr(iface, 'socket', None)
+            if sock is not None:
+                log_info("ReticulumWrapper", TAG,
+                    f"Closing socket for {name} to trigger reconnection...")
+                try:
+                    sock.shutdown(2)  # SHUT_RDWR
+                except Exception:
+                    pass
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                iface.socket = None
+                # Ensure detached is False so read_loop's exception handler
+                # calls reconnect() rather than teardown()
+                iface.detached = False
+                log_info("ReticulumWrapper", TAG,
+                    f"Socket closed for {name}, read_loop will trigger reconnect")
+            else:
+                log_warning("ReticulumWrapper", TAG,
+                    f"No socket to close for {name}, setting online=False")
+                iface.online = False
+        except Exception as e:
+            log_warning("ReticulumWrapper", TAG, f"Force reconnect failed for {name}: {e}")
 
     def _retry_failed_interfaces(self):
         """
