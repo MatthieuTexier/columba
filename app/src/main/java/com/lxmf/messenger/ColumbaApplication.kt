@@ -639,8 +639,8 @@ class ColumbaApplication : Application() {
         }
 
         return try {
-            serviceProtocol
-                .restorePeerIdentities(contactIdentities)
+            val result = serviceProtocol.restorePeerIdentities(contactIdentities)
+            result
                 .onSuccess { count ->
                     android.util.Log.d(
                         "ColumbaApplication",
@@ -653,7 +653,7 @@ class ColumbaApplication : Application() {
                         error,
                     )
                 }
-            contactIdentities.map { it.first }.toSet()
+            if (result.isSuccess) contactIdentities.map { it.first }.toSet() else emptySet()
         } catch (e: Exception) {
             android.util.Log.e("ColumbaApplication", "Error restoring prioritized contact identities", e)
             emptySet()
@@ -671,10 +671,11 @@ class ColumbaApplication : Application() {
         val batchSize = 500 // Process 500 peer identities at a time to limit memory usage
         var offset = 0
         var totalRestored = 0
+        var hasMoreBatches = true
 
         android.util.Log.d("ColumbaApplication", "Starting batched peer identity restoration (batch size: $batchSize)")
 
-        while (true) {
+        while (hasMoreBatches) {
             val rawBatch =
                 try {
                     conversationRepository.getPeerIdentitiesBatch(batchSize, offset)
@@ -684,7 +685,8 @@ class ColumbaApplication : Application() {
                 }
 
             if (rawBatch.isEmpty()) {
-                break
+                hasMoreBatches = false
+                continue
             }
 
             val batch = rawBatch.filterNot { alreadyRestoredIdentityHashes.contains(it.first) }
@@ -707,13 +709,13 @@ class ColumbaApplication : Application() {
                 }
 
                 offset += batchSize
-                if (batchCount < batchSize) {
-                    break
+                hasMoreBatches = batchCount >= batchSize
+                if (hasMoreBatches) {
+                    kotlinx.coroutines.yield()
                 }
-                kotlinx.coroutines.yield()
             } catch (e: Exception) {
                 android.util.Log.e("ColumbaApplication", "Error processing peer identity batch at offset $offset", e)
-                break
+                hasMoreBatches = false
             }
         }
 
