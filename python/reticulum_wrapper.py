@@ -5646,26 +5646,49 @@ class ReticulumWrapper:
                     stale = 0
                     self._tcp_iface_stale_cycles[name] = 0
 
-                # Log level depends on staleness
+                # Build log message
                 if stale >= 2:
-                    log_warning("ReticulumWrapper", TAG,
-                        f"⚠️ {name}: online={online} but NO DATA for {stale} cycles "
+                    msg = (f"⚠️ {name}: online={online} but NO DATA for {stale} cycles "
                         f"({stale * self._tcp_health_check_interval:.0f}s) — "
                         f"possible half-open socket. "
                         f"rxb={rxb}, txb={txb}, sock_timeout={sock_timeout}, "
                         f"sock_fd={sock_fileno}, reconnecting={reconnecting}")
+                    log_warning("ReticulumWrapper", TAG, msg)
                 elif stale == 1:
-                    log_info("ReticulumWrapper", TAG,
-                        f"🔍 {name}: online={online}, rxb={rxb} (unchanged), "
+                    msg = (f"🔍 {name}: online={online}, rxb={rxb} (unchanged), "
                         f"txb={txb}, sock_timeout={sock_timeout}, "
                         f"sock_fd={sock_fileno}, reconnecting={reconnecting}")
+                    log_info("ReticulumWrapper", TAG, msg)
                 else:
-                    log_debug("ReticulumWrapper", TAG,
-                        f"✓ {name}: online={online}, rxb={rxb}, txb={txb}, "
+                    msg = (f"✓ {name}: online={online}, rxb={rxb}, txb={txb}, "
                         f"sock_timeout={sock_timeout}, reconnecting={reconnecting}")
+                    log_debug("ReticulumWrapper", TAG, msg)
+
+                # Persist to file (survives logcat buffer overflow)
+                self._append_tcp_health_log(msg)
 
         except Exception as e:
             log_warning("ReticulumWrapper", TAG, f"Health check error: {e}")
+
+    def _append_tcp_health_log(self, msg):
+        """Append a TCP health check entry to a persistent log file on device storage."""
+        try:
+            from datetime import datetime
+            log_path = os.path.join(self.storage_path, "tcp_health.log")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(log_path, "a") as f:
+                f.write(f"[{timestamp}] {msg}\n")
+            # Rotate: keep last 500 lines to avoid unbounded growth
+            try:
+                with open(log_path, "r") as f:
+                    lines = f.readlines()
+                if len(lines) > 500:
+                    with open(log_path, "w") as f:
+                        f.writelines(lines[-500:])
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def _retry_failed_interfaces(self):
         """
