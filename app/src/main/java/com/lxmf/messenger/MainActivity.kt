@@ -332,7 +332,7 @@ class MainActivity : ComponentActivity() {
             if (action == NotificationHelper.ACTION_OPEN_CONVERSATION ||
                 action == NotificationHelper.ACTION_OPEN_ANNOUNCE
             ) {
-                Log.w(TAG, "onResume fallback: reprocessing notification intent (action=$action)")
+                Log.d(TAG, "onResume fallback: reprocessing notification intent (action=$action)")
                 processIntent(currentIntent)
             }
         }
@@ -678,7 +678,7 @@ fun ColumbaNavigation(
     LaunchedEffect(pendingNavigation.value) {
         pendingNavigation.value?.let { navigation ->
             try {
-            when (navigation) {
+                when (navigation) {
                 is PendingNavigation.AnnounceDetail -> {
                     val encodedHash = Uri.encode(navigation.destinationHash)
                     navController.navigate("announce_detail/$encodedHash")
