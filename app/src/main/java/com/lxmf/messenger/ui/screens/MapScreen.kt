@@ -618,6 +618,12 @@ fun MapScreen(
                                         }
                                     if (marker != null) {
                                         selectedMarker = marker
+                                        // Center the map on the tapped contact's location
+                                        map.animateCamera(
+                                            CameraUpdateFactory.newLatLng(
+                                                LatLng(marker.latitude, marker.longitude),
+                                            ),
+                                        )
                                         Log.d("MapScreen", "Marker tapped: ${marker.destinationHash.take(16)}")
                                     }
                                 }
