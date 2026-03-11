@@ -162,6 +162,16 @@ class SettingsRepository
             val SOS_DEACTIVATION_PIN = stringPreferencesKey("sos_deactivation_pin")
             val SOS_PERIODIC_UPDATES = booleanPreferencesKey("sos_periodic_updates")
             val SOS_UPDATE_INTERVAL_SECONDS = intPreferencesKey("sos_update_interval_seconds")
+
+            // SOS state persistence (survives app/phone restart)
+            val SOS_ACTIVE = booleanPreferencesKey("sos_active")
+            val SOS_ACTIVE_SENT_COUNT = intPreferencesKey("sos_active_sent_count")
+            val SOS_ACTIVE_FAILED_COUNT = intPreferencesKey("sos_active_failed_count")
+
+            // SOS trigger modes
+            val SOS_TRIGGER_MODE = stringPreferencesKey("sos_trigger_mode")
+            val SOS_SHAKE_SENSITIVITY = floatPreferencesKey("sos_shake_sensitivity")
+            val SOS_TAP_COUNT = intPreferencesKey("sos_tap_count")
         }
 
         // Cross-process SharedPreferences for service communication
@@ -2044,6 +2054,80 @@ class SettingsRepository
         suspend fun setSosUpdateIntervalSeconds(seconds: Int) {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.SOS_UPDATE_INTERVAL_SECONDS] = seconds.coerceIn(30, 600)
+            }
+        }
+
+        // ========== SOS State Persistence ==========
+
+        val sosActive: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_ACTIVE] ?: false
+                }.distinctUntilChanged()
+
+        val sosActiveSentCount: Flow<Int> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_ACTIVE_SENT_COUNT] ?: 0
+                }.distinctUntilChanged()
+
+        val sosActiveFailedCount: Flow<Int> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_ACTIVE_FAILED_COUNT] ?: 0
+                }.distinctUntilChanged()
+
+        suspend fun persistSosActiveState(sentCount: Int, failedCount: Int) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_ACTIVE] = true
+                preferences[PreferencesKeys.SOS_ACTIVE_SENT_COUNT] = sentCount
+                preferences[PreferencesKeys.SOS_ACTIVE_FAILED_COUNT] = failedCount
+            }
+        }
+
+        suspend fun clearSosActiveState() {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_ACTIVE] = false
+                preferences.remove(PreferencesKeys.SOS_ACTIVE_SENT_COUNT)
+                preferences.remove(PreferencesKeys.SOS_ACTIVE_FAILED_COUNT)
+            }
+        }
+
+        // ========== SOS Trigger Mode Settings ==========
+
+        val sosTriggerMode: Flow<String> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_TRIGGER_MODE] ?: "manual"
+                }.distinctUntilChanged()
+
+        suspend fun setSosTriggerMode(mode: String) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_TRIGGER_MODE] = mode
+            }
+        }
+
+        val sosShakeSensitivity: Flow<Float> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_SHAKE_SENSITIVITY] ?: 2.5f
+                }.distinctUntilChanged()
+
+        suspend fun setSosShakeSensitivity(sensitivity: Float) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_SHAKE_SENSITIVITY] = sensitivity.coerceIn(1.0f, 5.0f)
+            }
+        }
+
+        val sosTapCount: Flow<Int> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_TAP_COUNT] ?: 3
+                }.distinctUntilChanged()
+
+        suspend fun setSosTapCount(count: Int) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_TAP_COUNT] = count.coerceIn(3, 5)
             }
         }
     }

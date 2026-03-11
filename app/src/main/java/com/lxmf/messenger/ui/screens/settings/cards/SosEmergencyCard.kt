@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.lxmf.messenger.service.SosTriggerMode
 import com.lxmf.messenger.ui.components.CollapsibleSettingsCard
 
 @Composable
@@ -53,6 +54,12 @@ fun SosEmergencyCard(
     sosUpdateIntervalSeconds: Int,
     onSosUpdateIntervalSecondsChange: (Int) -> Unit,
     sosContactCount: Int,
+    sosTriggerMode: String,
+    onSosTriggerModeChange: (String) -> Unit,
+    sosShakeSensitivity: Float,
+    onSosShakeSensitivityChange: (Float) -> Unit,
+    sosTapCount: Int,
+    onSosTapCountChange: (Int) -> Unit,
 ) {
     CollapsibleSettingsCard(
         title = "SOS Emergency",
@@ -173,6 +180,91 @@ fun SosEmergencyCard(
                         )
                     }
                     Switch(checked = sosShowFloatingButton, onCheckedChange = onSosShowFloatingButtonChange)
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                // Trigger mode
+                Text("Trigger Mode", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "How SOS can be activated",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val triggerModes = SosTriggerMode.entries
+                val currentMode = SosTriggerMode.fromKey(sosTriggerMode)
+                triggerModes.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = currentMode == mode,
+                            onClick = { onSosTriggerModeChange(mode.key) },
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                when (mode) {
+                                    SosTriggerMode.MANUAL -> "Manual only"
+                                    SosTriggerMode.SHAKE -> "Shake phone"
+                                    SosTriggerMode.TAP_PATTERN -> "Tap pattern"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                when (mode) {
+                                    SosTriggerMode.MANUAL -> "Button or programmatic trigger"
+                                    SosTriggerMode.SHAKE -> "Shake the device vigorously to trigger"
+                                    SosTriggerMode.TAP_PATTERN -> "Tap the back of the phone rapidly"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                if (currentMode == SosTriggerMode.SHAKE) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Shake sensitivity: ${"%.1f".format(sosShakeSensitivity)}x",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Lower = more sensitive, Higher = harder shake required",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Slider(
+                        value = sosShakeSensitivity,
+                        onValueChange = onSosShakeSensitivityChange,
+                        valueRange = 1.0f..5.0f,
+                        steps = 7,
+                    )
+                }
+
+                if (currentMode == SosTriggerMode.TAP_PATTERN) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Required taps: $sosTapCount",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Number of rapid taps needed to trigger SOS",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Slider(
+                        value = sosTapCount.toFloat(),
+                        onValueChange = { onSosTapCountChange(it.toInt()) },
+                        valueRange = 3f..5f,
+                        steps = 1,
+                    )
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))

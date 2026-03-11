@@ -80,6 +80,34 @@ class SosManager
         private var periodicUpdateJob: Job? = null
 
         /**
+         * Restore persisted SOS active state after app/phone restart.
+         * Should be called once at app startup (e.g., from Application.onCreate or service init).
+         */
+        fun restoreIfActive() {
+            scope.launch {
+                try {
+                    val wasActive = settingsRepository.sosActive.first()
+                    if (!wasActive) return@launch
+
+                    val sentCount = settingsRepository.sosActiveSentCount.first()
+                    val failedCount = settingsRepository.sosActiveFailedCount.first()
+                    _state.value = SosState.Active(sentCount, failedCount)
+                    notificationHelper.showSosActiveNotification(sentCount, failedCount)
+                    Log.d(TAG, "Restored SOS active state: sent=$sentCount, failed=$failedCount")
+
+                    val periodicUpdates = settingsRepository.sosPeriodicUpdates.first()
+                    if (periodicUpdates) {
+                        startPeriodicUpdates()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error restoring SOS state", e)
+                }
+            }
+        }
+
+        /**
          * Trigger the SOS sequence. Reads settings to determine countdown duration,
          * then proceeds to send emergency messages to all SOS contacts.
          */
@@ -139,6 +167,7 @@ class SosManager
             periodicUpdateJob = null
             notificationHelper.cancelSosActiveNotification()
             _state.value = SosState.Idle
+            scope.launch { settingsRepository.clearSosActiveState() }
             Log.d(TAG, "SOS deactivated")
             return true
         }
@@ -228,6 +257,7 @@ class SosManager
             }
 
             _state.value = SosState.Active(sentCount, failedCount)
+            settingsRepository.persistSosActiveState(sentCount, failedCount)
             notificationHelper.showSosActiveNotification(sentCount, failedCount)
             Log.d(TAG, "SOS messages sent: $sentCount success, $failedCount failed")
 

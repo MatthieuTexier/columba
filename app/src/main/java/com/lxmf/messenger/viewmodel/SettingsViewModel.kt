@@ -177,6 +177,9 @@ data class SettingsState(
     val sosPeriodicUpdates: Boolean = false,
     val sosUpdateIntervalSeconds: Int = 120,
     val sosContactCount: Int = 0,
+    val sosTriggerMode: String = "manual",
+    val sosShakeSensitivity: Float = 2.5f,
+    val sosTapCount: Int = 3,
 )
 
 @Suppress("TooManyFunctions", "LargeClass") // ViewModel with many user interaction methods is expected
@@ -2086,6 +2089,21 @@ class SettingsViewModel
                     _state.update { it.copy(sosContactCount = contacts.size) }
                 }
             }
+            viewModelScope.launch {
+                settingsRepository.sosTriggerMode.collect { mode ->
+                    _state.update { it.copy(sosTriggerMode = mode) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosShakeSensitivity.collect { sensitivity ->
+                    _state.update { it.copy(sosShakeSensitivity = sensitivity) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosTapCount.collect { count ->
+                    _state.update { it.copy(sosTapCount = count) }
+                }
+            }
         }
 
         fun setSosEnabled(enabled: Boolean) {
@@ -2122,6 +2140,18 @@ class SettingsViewModel
 
         fun setSosUpdateIntervalSeconds(seconds: Int) {
             viewModelScope.launch { settingsRepository.setSosUpdateIntervalSeconds(seconds) }
+        }
+
+        fun setSosTriggerMode(mode: String) {
+            viewModelScope.launch { settingsRepository.setSosTriggerMode(mode) }
+        }
+
+        fun setSosShakeSensitivity(sensitivity: Float) {
+            viewModelScope.launch { settingsRepository.setSosShakeSensitivity(sensitivity) }
+        }
+
+        fun setSosTapCount(count: Int) {
+            viewModelScope.launch { settingsRepository.setSosTapCount(count) }
         }
 
         private fun loadUpdateSettings() {

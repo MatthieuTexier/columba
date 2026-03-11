@@ -433,6 +433,12 @@ fun SettingsScreen(
                     sosUpdateIntervalSeconds = state.sosUpdateIntervalSeconds,
                     onSosUpdateIntervalSecondsChange = { viewModel.setSosUpdateIntervalSeconds(it) },
                     sosContactCount = state.sosContactCount,
+                    sosTriggerMode = state.sosTriggerMode,
+                    onSosTriggerModeChange = { viewModel.setSosTriggerMode(it) },
+                    sosShakeSensitivity = state.sosShakeSensitivity,
+                    onSosShakeSensitivityChange = { viewModel.setSosShakeSensitivity(it) },
+                    sosTapCount = state.sosTapCount,
+                    onSosTapCountChange = { viewModel.setSosTapCount(it) },
                 )
 
                 MapSourcesCard(

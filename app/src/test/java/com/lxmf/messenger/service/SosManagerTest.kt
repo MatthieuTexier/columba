@@ -72,6 +72,11 @@ class SosManagerTest {
         every { settingsRepository.sosUpdateIntervalSeconds } returns flowOf(120)
         every { settingsRepository.sosDeactivationPin } returns flowOf(null)
         every { settingsRepository.sosSilentAutoAnswer } returns flowOf(false)
+        every { settingsRepository.sosActive } returns flowOf(false)
+        every { settingsRepository.sosActiveSentCount } returns flowOf(0)
+        every { settingsRepository.sosActiveFailedCount } returns flowOf(0)
+        coEvery { settingsRepository.persistSosActiveState(any(), any()) } just Runs
+        coEvery { settingsRepository.clearSosActiveState() } just Runs
 
         // Contact repository
         coEvery { contactRepository.getSosContacts() } returns emptyList()

@@ -64,11 +64,33 @@ All SOS settings are in a dedicated collapsible card in Settings. The feature is
 | Deactivation PIN | `null` | Optional PIN required to cancel SOS |
 | Periodic Updates | `false` | Send location updates while SOS is active |
 | Update Interval | `120` seconds | Interval between periodic location updates |
+| Trigger Mode | `manual` | How SOS is activated: `manual`, `shake`, or `tap_pattern` |
+| Shake Sensitivity | `2.5x` | Multiplier of gravity for shake threshold (1.0-5.0, lower = more sensitive) |
+| Tap Count | `3` | Number of rapid taps required for tap pattern trigger (3-5) |
 
 All settings are persisted in DataStore (`SettingsRepository`) as typed `Flow<T>` properties.
 
+#### SOS Trigger Modes
+
+**Manual** (default): SOS is triggered via the floating button or programmatic API only.
+
+**Shake**: The device accelerometer monitors for sustained vigorous shaking. The acceleration magnitude minus gravity must exceed `shakeSensitivity * 9.81 m/s²` for a cumulative 500ms within a 1-second window. A 5-second cooldown prevents repeat triggers.
+
+**Tap Pattern**: The accelerometer detects sharp acceleration spikes (>15 m/s²) in rapid succession. When `tapCount` taps are detected within a 1.5-second window, SOS is triggered. An 80ms debounce prevents double-counting single taps. A 5-second cooldown prevents repeat triggers.
+
+Both gesture modes work through `SosTriggerDetector`, a singleton `SensorEventListener` that registers on the device's `TYPE_ACCELEROMETER` sensor. The detector is started when SOS is enabled with a non-manual trigger mode, and stopped otherwise.
+
+#### SOS State Persistence
+
+The SOS active state survives app kills and phone restarts:
+- When entering `Active` state, `SosManager` persists `(sosActive=true, sentCount, failedCount)` to DataStore
+- On app startup, `SosManager.restoreIfActive()` checks DataStore and restores the `Active` state, re-shows the notification, and restarts periodic updates if enabled
+- On deactivation, the persisted state is cleared
+
+This ensures that if the phone reboots during an active SOS, the emergency state is restored and the persistent notification reappears.
+
 #### SOS Trigger Flow
-1. User triggers SOS (floating button, or programmatic trigger)
+1. User triggers SOS (floating button, shake, tap pattern, or programmatic trigger)
 2. If countdown > 0: state transitions to `Countdown`, timer ticks down, user can cancel
 3. If countdown = 0 or timer expires: state transitions to `Sending`
 4. `SosManager` collects all SOS-tagged contacts, builds the message:
@@ -126,6 +148,7 @@ All settings are persisted in DataStore (`SettingsRepository`) as typed `Flow<T>
 | `app/.../service/SosManager.kt` | Core state machine: `Idle` → `Countdown` → `Sending` → `Active`. Manages GPS, message sending, periodic updates, PIN deactivation. Injected with `CoroutineScope`, `ContactRepository`, `SettingsRepository`, `ReticulumProtocol`, `NotificationHelper`. |
 | `app/.../viewmodel/SosViewModel.kt` | Thin ViewModel wrapping `SosManager`. Exposes `state: StateFlow<SosState>`, `trigger()`, `cancel()`, `deactivate(pin)`. Used by UI screens. |
 | `app/.../ui/screens/settings/cards/SosEmergencyCard.kt` | Composable settings card with all SOS configuration options. Collapsible card with toggle switches, text fields, sliders. |
+| `app/.../service/SosTriggerDetector.kt` | Accelerometer-based SOS trigger detection. Supports shake and tap pattern modes via `SensorEventListener`. Singleton with `start()`/`stop()`/`reloadSettings()` API. |
 
 ### Modified Files
 
@@ -133,8 +156,8 @@ All settings are persisted in DataStore (`SettingsRepository`) as typed `Flow<T>
 |------|---------|
 | `data/.../model/EnrichedContact.kt` | Added `val isSosContact: Boolean get() = getTagsList().contains("sos")` |
 | `data/.../repository/ContactRepository.kt` | Added `toggleSosTag()`, `getSosContacts()`, `getSosContactsFlow()` methods |
-| `app/.../repository/SettingsRepository.kt` | Added 9 SOS DataStore properties (`sosEnabled`, `sosMessageTemplate`, `sosCountdownSeconds`, `sosIncludeLocation`, `sosSilentAutoAnswer`, `sosShowFloatingButton`, `sosDeactivationPin`, `sosPeriodicUpdates`, `sosUpdateIntervalSeconds`) with getter flows and setter methods |
-| `app/.../viewmodel/SettingsViewModel.kt` | Added SOS state fields, collector coroutines for all 9 SOS settings, and setter methods (`setSosEnabled`, etc.) |
+| `app/.../repository/SettingsRepository.kt` | Added 12 SOS DataStore properties: 9 original settings + 3 state persistence (`sosActive`, `sosActiveSentCount`, `sosActiveFailedCount`) + 3 trigger mode settings (`sosTriggerMode`, `sosShakeSensitivity`, `sosTapCount`) with getter flows and setter methods |
+| `app/.../viewmodel/SettingsViewModel.kt` | Added SOS state fields, collector coroutines for all 12 SOS settings + trigger mode, and setter methods (`setSosEnabled`, `setSosTriggerMode`, etc.) |
 | `app/.../viewmodel/ContactsViewModel.kt` | Added `toggleSosTag(destinationHash)` method |
 | `app/.../notifications/NotificationHelper.kt` | Added `CHANNEL_ID_SOS`, `NOTIFICATION_ID_SOS`, `ACTION_SOS_CALL_BACK`, `ACTION_SOS_VIEW_MAP`. Added `notifySosReceived()`, `showSosActiveNotification()`, `cancelSosActiveNotification()`, `isSosMessage()`, `parseSosLocation()` |
 | `app/.../service/MessageCollector.kt` | Added SOS detection branch before regular notification posting |
@@ -142,7 +165,7 @@ All settings are persisted in DataStore (`SettingsRepository`) as typed `Flow<T>
 | `app/.../ui/screens/MessagingScreen.kt` | Added SOS bubble styling (`errorContainer` color), "SOS EMERGENCY" header badge, "View on Map" button for GPS-tagged messages, `isSosMessageContent()` and `parseSosGpsLocation()` helper functions |
 | `app/.../MainActivityIntentHandler.kt` | Added `ACTION_SOS_CALL_BACK` → conversation navigation, `ACTION_SOS_VIEW_MAP` → map focus navigation |
 | `app/.../MainActivity.kt` | Added `PendingNavigation.SosMapFocus` sealed class variant, navigation handler for SOS map focus |
-| `app/.../service/SosManager.kt` | Integrated `NotificationHelper` for sender-side persistent notification |
+| `app/.../service/SosManager.kt` | Added state persistence to DataStore on Active transition, `restoreIfActive()` for startup recovery, clear on deactivation |
 
 ### SOS Message Format
 
@@ -279,10 +302,12 @@ Tests tag-based SOS contact management:
 1. A customizes message template: "AU SECOURS! Accident de randonnée."
 2. A triggers SOS → verify B receives custom text (not default)
 
-### Scenario 11: Resilience (App Kill)
+### Scenario 11: Resilience (App Kill / Phone Restart)
 1. A triggers SOS, force-kill app
-2. Relaunch → verify SOS state is reset to Idle (not stuck in Active)
-3. Verify sender notification is cleared
+2. Relaunch → verify SOS state is restored to Active (not reset to Idle)
+3. Verify sender notification reappears with correct sent/failed counts
+4. Verify periodic updates resume if they were enabled
+5. A deactivates → verify state clears and does not restore on next relaunch
 
 ### Scenario 12: Repeated Cycle
 1. A triggers SOS → deactivate → trigger again
@@ -298,6 +323,23 @@ Tests tag-based SOS contact management:
 2. Open conversation → verify red bubble, "SOS EMERGENCY" badge, "View on Map" button
 3. Tap "View on Map" → verify map opens at correct location
 4. Receive regular message from A → verify normal bubble styling (not red)
+
+### Scenario 15: Shake Trigger
+1. A enables SOS with trigger mode "Shake", sensitivity 2.5x
+2. Shake phone vigorously for ~1 second → verify SOS countdown starts
+3. Let countdown complete → verify messages sent normally
+4. Verify gentle movements (walking, pocket) do NOT trigger SOS
+
+### Scenario 16: Tap Pattern Trigger
+1. A enables SOS with trigger mode "Tap Pattern", 3 taps
+2. Tap back of phone 3 times rapidly (~1s) → verify SOS countdown starts
+3. Verify 2 taps do NOT trigger SOS
+4. Set to 5 taps → verify 3 taps no longer trigger, 5 taps do
+
+### Scenario 17: Trigger Mode Cooldown
+1. A enables shake trigger, triggers SOS, deactivates
+2. Immediately shake again → verify 5-second cooldown prevents re-trigger
+3. Wait 5+ seconds, shake → verify trigger fires
 
 ### Regression Checklist
 - [ ] Regular messages still display correctly (no false SOS detection)
@@ -321,3 +363,6 @@ _To be added after implementation._
 - **Low risk**: SOS detection regex is conservative (requires "GPS:" prefix)
 - **Medium risk**: Periodic GPS updates may impact battery — mitigated by configurable interval (default 120s) and opt-in setting
 - **Low risk**: Receiver-side changes are additive (new notification channel, new bubble color) — existing flows untouched when message is not SOS
+- **Low risk**: Accelerometer listener uses `SENSOR_DELAY_UI` (~60ms) for minimal battery impact; unregistered when trigger mode is MANUAL
+- **Low risk**: State persistence uses existing DataStore infrastructure; 3 boolean/int keys with negligible storage overhead
+- **Medium risk**: Shake/tap false positives — mitigated by configurable sensitivity, cumulative duration threshold (shake), debounce + cooldown (tap), and always requiring the countdown phase
