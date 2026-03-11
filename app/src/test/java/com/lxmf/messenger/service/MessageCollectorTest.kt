@@ -67,6 +67,7 @@ class MessageCollectorTest {
 
         // Explicit stubs for notificationHelper (suspend function)
         coEvery { notificationHelper.notifyMessageReceived(any(), any(), any(), any()) } returns Unit
+        every { notificationHelper.isSosMessage(any()) } returns false
 
         // Explicit stubs for peerIconDao
         coEvery { peerIconDao.getIcon(any()) } returns null

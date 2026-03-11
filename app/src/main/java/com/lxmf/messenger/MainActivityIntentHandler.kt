@@ -22,6 +22,8 @@ class MainActivityIntentHandler(
         when (intent.action) {
             NotificationHelper.ACTION_OPEN_ANNOUNCE -> handleOpenAnnounce(intent)
             NotificationHelper.ACTION_OPEN_CONVERSATION -> handleOpenConversation(intent)
+            NotificationHelper.ACTION_SOS_CALL_BACK -> handleSosCallBack(intent)
+            NotificationHelper.ACTION_SOS_VIEW_MAP -> handleSosViewMap(intent)
             Intent.ACTION_VIEW -> handleActionView(intent)
             Intent.ACTION_SEND -> handleActionSend(intent)
             Intent.ACTION_SEND_MULTIPLE -> handleActionSendMultiple(intent)
@@ -233,6 +235,25 @@ class MainActivityIntentHandler(
             Log.w(logTag, "📞 pendingNavigation.value is now: ${pendingNavigation.value}")
         } else {
             Log.e(logTag, "📞 identityHash is NULL! Cannot navigate to call")
+        }
+    }
+
+    private fun handleSosCallBack(intent: Intent) {
+        val destinationHash = intent.getStringExtra(NotificationHelper.EXTRA_DESTINATION_HASH)
+        val peerName = intent.getStringExtra(NotificationHelper.EXTRA_PEER_NAME) ?: "Contact"
+        if (destinationHash != null) {
+            Log.d(logTag, "SOS call-back: opening conversation with $peerName ($destinationHash)")
+            pendingNavigation.value = PendingNavigation.Conversation(destinationHash, peerName)
+        }
+    }
+
+    private fun handleSosViewMap(intent: Intent) {
+        val lat = intent.getDoubleExtra("latitude", 0.0)
+        val lon = intent.getDoubleExtra("longitude", 0.0)
+        val label = intent.getStringExtra(NotificationHelper.EXTRA_PEER_NAME) ?: "SOS"
+        if (lat != 0.0 && lon != 0.0) {
+            Log.d(logTag, "SOS view map: focusing on $lat, $lon ($label)")
+            pendingNavigation.value = PendingNavigation.SosMapFocus(lat, lon, "SOS: $label")
         }
     }
 

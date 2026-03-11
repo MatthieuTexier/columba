@@ -59,6 +59,7 @@ enum class SettingsCardId {
     SHARE_COLUMBA,
     ABOUT,
     SHARED_INSTANCE_BANNER,
+    SOS_EMERGENCY,
 }
 
 @androidx.compose.runtime.Immutable
@@ -165,6 +166,17 @@ data class SettingsState(
     val includePrereleaseUpdates: Boolean = false,
     // Message sort order: false = received time (default), true = sent time
     val sortMessagesBySentTime: Boolean = false,
+    // SOS Emergency state
+    val sosEnabled: Boolean = false,
+    val sosMessageTemplate: String = "SOS! I need help. This is an emergency.",
+    val sosCountdownSeconds: Int = 5,
+    val sosIncludeLocation: Boolean = true,
+    val sosSilentAutoAnswer: Boolean = false,
+    val sosShowFloatingButton: Boolean = false,
+    val sosDeactivationPin: String? = null,
+    val sosPeriodicUpdates: Boolean = false,
+    val sosUpdateIntervalSeconds: Int = 120,
+    val sosContactCount: Int = 0,
 )
 
 @Suppress("TooManyFunctions", "LargeClass") // ViewModel with many user interaction methods is expected
@@ -236,6 +248,8 @@ class SettingsViewModel
             loadTelemetryCollectorSettings()
             // Load contacts for allowed requesters picker
             loadContacts()
+            // Load SOS emergency settings
+            loadSosSettings()
             // Load update checker settings and maybe check on startup
             loadUpdateSettings()
             // Always start sync state monitoring (no infinite loops, needed for UI)
@@ -2017,6 +2031,97 @@ class SettingsViewModel
                 telemetryCollectorManager.setAllowedRequesters(allowedHashes)
                 Log.d(TAG, "Telemetry allowed requesters saved: ${allowedHashes.size}")
             }
+        }
+
+        // ========== SOS Emergency ==========
+
+        private fun loadSosSettings() {
+            viewModelScope.launch {
+                settingsRepository.sosEnabled.collect { enabled ->
+                    _state.update { it.copy(sosEnabled = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosMessageTemplate.collect { template ->
+                    _state.update { it.copy(sosMessageTemplate = template) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosCountdownSeconds.collect { seconds ->
+                    _state.update { it.copy(sosCountdownSeconds = seconds) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosIncludeLocation.collect { include ->
+                    _state.update { it.copy(sosIncludeLocation = include) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosSilentAutoAnswer.collect { enabled ->
+                    _state.update { it.copy(sosSilentAutoAnswer = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosShowFloatingButton.collect { show ->
+                    _state.update { it.copy(sosShowFloatingButton = show) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosDeactivationPin.collect { pin ->
+                    _state.update { it.copy(sosDeactivationPin = pin) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosPeriodicUpdates.collect { enabled ->
+                    _state.update { it.copy(sosPeriodicUpdates = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosUpdateIntervalSeconds.collect { seconds ->
+                    _state.update { it.copy(sosUpdateIntervalSeconds = seconds) }
+                }
+            }
+            viewModelScope.launch {
+                contactRepository.getSosContactsFlow().collect { contacts ->
+                    _state.update { it.copy(sosContactCount = contacts.size) }
+                }
+            }
+        }
+
+        fun setSosEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosEnabled(enabled) }
+        }
+
+        fun setSosMessageTemplate(template: String) {
+            viewModelScope.launch { settingsRepository.setSosMessageTemplate(template) }
+        }
+
+        fun setSosCountdownSeconds(seconds: Int) {
+            viewModelScope.launch { settingsRepository.setSosCountdownSeconds(seconds) }
+        }
+
+        fun setSosIncludeLocation(include: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosIncludeLocation(include) }
+        }
+
+        fun setSosSilentAutoAnswer(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosSilentAutoAnswer(enabled) }
+        }
+
+        fun setSosShowFloatingButton(show: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosShowFloatingButton(show) }
+        }
+
+        fun setSosDeactivationPin(pin: String?) {
+            viewModelScope.launch { settingsRepository.setSosDeactivationPin(pin) }
+        }
+
+        fun setSosPeriodicUpdates(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosPeriodicUpdates(enabled) }
+        }
+
+        fun setSosUpdateIntervalSeconds(seconds: Int) {
+            viewModelScope.launch { settingsRepository.setSosUpdateIntervalSeconds(seconds) }
         }
 
         private fun loadUpdateSettings() {

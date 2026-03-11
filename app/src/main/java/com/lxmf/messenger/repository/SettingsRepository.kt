@@ -151,6 +151,17 @@ class SettingsRepository
 
             // Message sort order: false = received time (default), true = sent time
             val SORT_MESSAGES_BY_SENT_TIME = booleanPreferencesKey("sort_messages_by_sent_time")
+
+            // SOS Emergency preferences
+            val SOS_ENABLED = booleanPreferencesKey("sos_enabled")
+            val SOS_MESSAGE_TEMPLATE = stringPreferencesKey("sos_message_template")
+            val SOS_COUNTDOWN_SECONDS = intPreferencesKey("sos_countdown_seconds")
+            val SOS_INCLUDE_LOCATION = booleanPreferencesKey("sos_include_location")
+            val SOS_SILENT_AUTO_ANSWER = booleanPreferencesKey("sos_silent_auto_answer")
+            val SOS_SHOW_FLOATING_BUTTON = booleanPreferencesKey("sos_show_floating_button")
+            val SOS_DEACTIVATION_PIN = stringPreferencesKey("sos_deactivation_pin")
+            val SOS_PERIODIC_UPDATES = booleanPreferencesKey("sos_periodic_updates")
+            val SOS_UPDATE_INTERVAL_SECONDS = intPreferencesKey("sos_update_interval_seconds")
         }
 
         // Cross-process SharedPreferences for service communication
@@ -1918,6 +1929,121 @@ class SettingsRepository
         suspend fun setSortMessagesBySentTime(enabled: Boolean) {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.SORT_MESSAGES_BY_SENT_TIME] = enabled
+            }
+        }
+
+        // ========== SOS Emergency Settings ==========
+
+        val sosEnabled: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_ENABLED] ?: false
+                }.distinctUntilChanged()
+
+        suspend fun setSosEnabled(enabled: Boolean) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_ENABLED] = enabled
+            }
+        }
+
+        val sosMessageTemplate: Flow<String> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_MESSAGE_TEMPLATE]
+                        ?: "SOS! I need help. This is an emergency."
+                }.distinctUntilChanged()
+
+        suspend fun setSosMessageTemplate(template: String) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_MESSAGE_TEMPLATE] = template
+            }
+        }
+
+        val sosCountdownSeconds: Flow<Int> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_COUNTDOWN_SECONDS] ?: 5
+                }.distinctUntilChanged()
+
+        suspend fun setSosCountdownSeconds(seconds: Int) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_COUNTDOWN_SECONDS] = seconds.coerceIn(0, 30)
+            }
+        }
+
+        val sosIncludeLocation: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_INCLUDE_LOCATION] ?: true
+                }.distinctUntilChanged()
+
+        suspend fun setSosIncludeLocation(include: Boolean) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_INCLUDE_LOCATION] = include
+            }
+        }
+
+        val sosSilentAutoAnswer: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_SILENT_AUTO_ANSWER] ?: false
+                }.distinctUntilChanged()
+
+        suspend fun setSosSilentAutoAnswer(enabled: Boolean) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_SILENT_AUTO_ANSWER] = enabled
+            }
+        }
+
+        val sosShowFloatingButton: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_SHOW_FLOATING_BUTTON] ?: false
+                }.distinctUntilChanged()
+
+        suspend fun setSosShowFloatingButton(show: Boolean) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_SHOW_FLOATING_BUTTON] = show
+            }
+        }
+
+        val sosDeactivationPin: Flow<String?> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_DEACTIVATION_PIN]
+                }.distinctUntilChanged()
+
+        suspend fun setSosDeactivationPin(pin: String?) {
+            context.dataStore.edit { preferences ->
+                if (pin.isNullOrBlank()) {
+                    preferences.remove(PreferencesKeys.SOS_DEACTIVATION_PIN)
+                } else {
+                    preferences[PreferencesKeys.SOS_DEACTIVATION_PIN] = pin
+                }
+            }
+        }
+
+        val sosPeriodicUpdates: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_PERIODIC_UPDATES] ?: false
+                }.distinctUntilChanged()
+
+        suspend fun setSosPeriodicUpdates(enabled: Boolean) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_PERIODIC_UPDATES] = enabled
+            }
+        }
+
+        val sosUpdateIntervalSeconds: Flow<Int> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_UPDATE_INTERVAL_SECONDS] ?: 120
+                }.distinctUntilChanged()
+
+        suspend fun setSosUpdateIntervalSeconds(seconds: Int) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_UPDATE_INTERVAL_SECONDS] = seconds.coerceIn(30, 600)
             }
         }
     }

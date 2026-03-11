@@ -524,6 +524,13 @@ sealed class PendingNavigation {
         val productId: Int,
         val deviceName: String,
     ) : PendingNavigation()
+
+    /** Navigate to map focused on SOS sender's location */
+    data class SosMapFocus(
+        val latitude: Double,
+        val longitude: Double,
+        val label: String,
+    ) : PendingNavigation()
 }
 
 sealed class Screen(
@@ -794,6 +801,16 @@ fun ColumbaNavigation(
                                 "&usbDeviceName=${Uri.encode(navigation.deviceName)}"
                         navController.navigate(route)
                         Log.d("ColumbaNavigation", "Navigated to flasher (direct): ${navigation.usbDeviceId}")
+                    }
+                    is PendingNavigation.SosMapFocus -> {
+                        val encodedLabel = Uri.encode(navigation.label)
+                        navController.navigate(
+                            "map_focus?lat=${navigation.latitude}&lon=${navigation.longitude}" +
+                                "&label=$encodedLabel&type=SOS&height=${Float.NaN}" +
+                                "&reachableOn=&port=-1&frequency=-1&bandwidth=-1" +
+                                "&sf=-1&cr=-1&modulation=&status=&lastHeard=-1&hops=-1",
+                        )
+                        Log.d("ColumbaNavigation", "Navigated to map for SOS: ${navigation.label}")
                     }
                 }
                 // Only clear on success so a failed navigation can be retried

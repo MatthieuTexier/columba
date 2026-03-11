@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -81,6 +82,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -157,7 +159,9 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.lxmf.messenger.MainActivity
 import com.lxmf.messenger.R
+import com.lxmf.messenger.notifications.NotificationHelper
 import com.lxmf.messenger.service.SyncProgress
 import com.lxmf.messenger.service.SyncResult
 import com.lxmf.messenger.ui.components.AttachmentPanel
@@ -1858,6 +1862,9 @@ fun MessageBubble(
                 )
             }
         } else {
+            // Detect SOS messages from others
+            val isSosMessage = !isFromMe && isSosMessageContent(message.content)
+
             // Regular message with bubble
             Box {
                 Surface(
@@ -1869,7 +1876,9 @@ fun MessageBubble(
                             bottomEnd = if (isFromMe) 4.dp else 20.dp,
                         ),
                     color =
-                        if (isFromMe) {
+                        if (isSosMessage) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else if (isFromMe) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerHigh
@@ -2080,11 +2089,77 @@ fun MessageBubble(
                             }
                         }
 
+                        // SOS header badge for emergency messages
+                        if (isSosMessage) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Warning,
+                                    contentDescription = "SOS Emergency",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "SOS EMERGENCY",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+
                         LinkifiedMessageText(
                             text = message.content,
                             isFromMe = isFromMe,
                             fontScale = fontScale,
                         )
+
+                        // "View on Map" button for SOS messages with GPS coordinates
+                        if (isSosMessage) {
+                            val sosLocation = parseSosGpsLocation(message.content)
+                            if (sosLocation != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    onClick = {
+                                        val mapIntent = Intent(context, MainActivity::class.java).apply {
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                            action = NotificationHelper.ACTION_SOS_VIEW_MAP
+                                            putExtra(NotificationHelper.EXTRA_PEER_NAME, peerName)
+                                            putExtra("latitude", sosLocation.first)
+                                            putExtra("longitude", sosLocation.second)
+                                        }
+                                        context.startActivity(mapIntent)
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.LocationOn,
+                                            contentDescription = "View on Map",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onError,
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "View on Map",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onError,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2094,7 +2169,9 @@ fun MessageBubble(
                                 text = formatTimestamp(message.receivedAt ?: message.timestamp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color =
-                                    if (isFromMe) {
+                                    if (isSosMessage) {
+                                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                                    } else if (isFromMe) {
                                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -2502,6 +2579,26 @@ fun EmptyMessagesState() {
 }
 
 private enum class InputPanelMode { NONE, KEYBOARD, PANEL }
+
+private fun isSosMessageContent(content: String): Boolean {
+    val upper = content.uppercase().trimStart()
+    return upper.startsWith("SOS") ||
+        upper.startsWith("URGENCE") ||
+        upper.startsWith("EMERGENCY") ||
+        upper.contains("SOS UPDATE - GPS:")
+}
+
+private fun parseSosGpsLocation(content: String): Pair<Double, Double>? {
+    val regex = Regex("""GPS:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)""")
+    val match = regex.find(content) ?: return null
+    return try {
+        val lat = match.groupValues[1].toDouble()
+        val lng = match.groupValues[2].toDouble()
+        if (lat in -90.0..90.0 && lng in -180.0..180.0) Pair(lat, lng) else null
+    } catch (e: NumberFormatException) {
+        null
+    }
+}
 
 private fun formatTimestamp(timestamp: Long): String {
     val now = System.currentTimeMillis()

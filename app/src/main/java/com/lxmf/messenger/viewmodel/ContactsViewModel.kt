@@ -334,6 +334,20 @@ class ContactsViewModel
         }
 
         /**
+         * Toggle SOS tag for a contact
+         */
+        fun toggleSosTag(destinationHash: String) {
+            viewModelScope.launch {
+                try {
+                    contactRepository.toggleSosTag(destinationHash)
+                    Log.d(TAG, "Toggled SOS tag for $destinationHash")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to toggle SOS tag for $destinationHash", e)
+                }
+            }
+        }
+
+        /**
          * Check if a contact already exists by destination hash.
          * Returns the existing contact if found, null otherwise.
          *
