@@ -464,6 +464,20 @@ class SettingsViewModel
                             // Preserve update checker state from loadUpdateSettings()
                             updateCheckResult = _state.value.updateCheckResult,
                             includePrereleaseUpdates = _state.value.includePrereleaseUpdates,
+                            // Preserve SOS state from loadSosSettings()
+                            sosEnabled = _state.value.sosEnabled,
+                            sosMessageTemplate = _state.value.sosMessageTemplate,
+                            sosCountdownSeconds = _state.value.sosCountdownSeconds,
+                            sosIncludeLocation = _state.value.sosIncludeLocation,
+                            sosSilentAutoAnswer = _state.value.sosSilentAutoAnswer,
+                            sosShowFloatingButton = _state.value.sosShowFloatingButton,
+                            sosDeactivationPin = _state.value.sosDeactivationPin,
+                            sosPeriodicUpdates = _state.value.sosPeriodicUpdates,
+                            sosUpdateIntervalSeconds = _state.value.sosUpdateIntervalSeconds,
+                            sosContactCount = _state.value.sosContactCount,
+                            sosTriggerMode = _state.value.sosTriggerMode,
+                            sosShakeSensitivity = _state.value.sosShakeSensitivity,
+                            sosTapCount = _state.value.sosTapCount,
                         )
                     }.distinctUntilChanged().collect { newState ->
                         applySettingsUpdate(newState)

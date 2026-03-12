@@ -12,7 +12,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -66,29 +65,14 @@ fun SosEmergencyCard(
         icon = Icons.Filled.Warning,
         isExpanded = isExpanded,
         onExpandedChange = onExpandedChange,
+        headerAction = {
+            Switch(checked = sosEnabled, onCheckedChange = onSosEnabledChange)
+        },
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            // Master toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Enable SOS", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Allow sending emergency distress signals",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(checked = sosEnabled, onCheckedChange = onSosEnabledChange)
-            }
-
             if (sosEnabled) {
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "$sosContactCount SOS contact(s) configured",
                     style = MaterialTheme.typography.bodySmall,
@@ -97,10 +81,14 @@ fun SosEmergencyCard(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Message template
+                // Message template (local state to avoid cursor reset on async DataStore roundtrip)
+                var templateText by remember { mutableStateOf(sosMessageTemplate) }
                 OutlinedTextField(
-                    value = sosMessageTemplate,
-                    onValueChange = onSosMessageTemplateChange,
+                    value = templateText,
+                    onValueChange = {
+                        templateText = it
+                        onSosMessageTemplateChange(it)
+                    },
                     label = { Text("Message Template") },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3,

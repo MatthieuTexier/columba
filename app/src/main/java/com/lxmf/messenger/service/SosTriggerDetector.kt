@@ -12,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -65,9 +67,14 @@ class SosTriggerDetector
             private const val SHAKE_COOLDOWN_MS = 5_000L
 
             // Tap detection constants
-            private const val TAP_THRESHOLD = 15.0f // m/s² spike to count as a tap
-            private const val TAP_WINDOW_MS = 1_500L // max time window for all taps
-            private const val TAP_MIN_INTERVAL_MS = 80L // ignore taps closer than this (debounce)
+            // Spike-based detection: a tap is counted only when netAcceleration crosses above
+            // TAP_THRESHOLD and returns below it within MAX_TAP_SPIKE_MS.
+            // Walking/running steps last >100ms at the sensor → rejected by duration filter.
+            // This lets us use a lower threshold without false positives from sustained motion.
+            private const val TAP_THRESHOLD = 4.0f       // m/s² to enter a spike
+            private const val MAX_TAP_SPIKE_MS = 100L    // valid tap spike must end within this
+            private const val TAP_WINDOW_MS = 2_500L     // sliding window to accumulate taps
+            private const val TAP_MIN_INTERVAL_MS = 150L // min time between two registered taps
             private const val TAP_COOLDOWN_MS = 5_000L
         }
 
@@ -92,6 +99,9 @@ class SosTriggerDetector
         // Tap state
         private val tapTimestamps = mutableListOf<Long>()
         private var lastTapTriggerTime = 0L
+        private var lastTapRegisteredTime = 0L
+        private var inTapSpike = false
+        private var tapSpikeStartTime = 0L
 
         /**
          * Start listening for trigger gestures. Reads current settings and
@@ -120,10 +130,12 @@ class SosTriggerDetector
                 return
             }
 
+            // SENSOR_DELAY_GAME (~20ms) needed for tap detection: brief taps last only 20-50ms
+            // and SENSOR_DELAY_UI (~60ms) misses peaks between samples.
             sensorManager.registerListener(
                 this,
                 accelerometer,
-                SensorManager.SENSOR_DELAY_UI,
+                SensorManager.SENSOR_DELAY_GAME,
             )
             isListening = true
             Log.d(TAG, "Started listening for trigger mode: ${currentMode.key}")
@@ -137,7 +149,7 @@ class SosTriggerDetector
             sensorManager.unregisterListener(this)
             isListening = false
             resetShakeState()
-            tapTimestamps.clear()
+            resetTapState()
             settingsJob?.cancel()
             settingsJob = null
             Log.d(TAG, "Stopped listening")
@@ -150,6 +162,31 @@ class SosTriggerDetector
         fun reloadSettings() {
             stop()
             start()
+        }
+
+        /**
+         * Start observing SOS settings and automatically manage the sensor listener.
+         * Should be called once at app startup (main process only).
+         * Starts the detector when SOS is enabled with a non-MANUAL trigger mode,
+         * stops it when SOS is disabled or mode switches to MANUAL.
+         */
+        fun startObserving() {
+            scope.launch {
+                combine(
+                    settingsRepository.sosEnabled,
+                    settingsRepository.sosTriggerMode,
+                    settingsRepository.sosShakeSensitivity,
+                    settingsRepository.sosTapCount,
+                ) { enabled, mode, _, _ -> enabled to mode }
+                    .distinctUntilChanged()
+                    .collect { (enabled, mode) ->
+                        if (enabled && SosTriggerMode.fromKey(mode) != SosTriggerMode.MANUAL) {
+                            reloadSettings()
+                        } else {
+                            stop()
+                        }
+                    }
+            }
         }
 
         override fun onSensorChanged(event: SensorEvent) {
@@ -212,28 +249,51 @@ class SosTriggerDetector
         }
 
         /**
-         * Tap detection: count sharp acceleration spikes (above [TAP_THRESHOLD])
-         * that occur within [TAP_WINDOW_MS]. When [requiredTapCount] taps are detected,
-         * trigger SOS.
+         * Tap detection using spike-based state machine.
+         *
+         * A tap is counted only when [netAcceleration] crosses above [TAP_THRESHOLD] and then
+         * returns below it within [MAX_TAP_SPIKE_MS]. This rejects walking steps and sustained
+         * vibrations (which create spikes lasting >100ms) while reliably catching brief finger
+         * taps (typically 20–80ms). The lower threshold is safe because the duration filter
+         * prevents false positives from continuous motion.
          */
         private fun handleTap(netAcceleration: Float, now: Long) {
             if (now - lastTapTriggerTime < TAP_COOLDOWN_MS) return
 
-            if (netAcceleration > TAP_THRESHOLD) {
-                // Debounce: ignore taps too close together
-                val lastTap = tapTimestamps.lastOrNull() ?: 0L
-                if (now - lastTap < TAP_MIN_INTERVAL_MS) return
+            if (!inTapSpike) {
+                if (netAcceleration > TAP_THRESHOLD) {
+                    // Rising edge: spike starts
+                    inTapSpike = true
+                    tapSpikeStartTime = now
+                }
+            } else {
+                if (netAcceleration > TAP_THRESHOLD) {
+                    // Still in spike — abort if it lasts too long (walking, shake, sustained bump)
+                    if (now - tapSpikeStartTime > MAX_TAP_SPIKE_MS) {
+                        inTapSpike = false
+                    }
+                } else {
+                    // Falling edge: spike ended
+                    val spikeDuration = now - tapSpikeStartTime
+                    inTapSpike = false
 
-                tapTimestamps.add(now)
+                    if (spikeDuration <= MAX_TAP_SPIKE_MS &&
+                        now - lastTapRegisteredTime >= TAP_MIN_INTERVAL_MS
+                    ) {
+                        // Valid short spike with sufficient gap from previous tap
+                        lastTapRegisteredTime = now
+                        tapTimestamps.add(now)
+                        tapTimestamps.removeAll { now - it > TAP_WINDOW_MS }
 
-                // Remove taps outside the window
-                tapTimestamps.removeAll { now - it > TAP_WINDOW_MS }
+                        Log.d(TAG, "Tap registered (spike ${spikeDuration}ms), count=${tapTimestamps.size}/$requiredTapCount")
 
-                if (tapTimestamps.size >= requiredTapCount) {
-                    Log.d(TAG, "Tap pattern detected (${tapTimestamps.size} taps)! Triggering SOS")
-                    lastTapTriggerTime = now
-                    tapTimestamps.clear()
-                    sosManager.trigger()
+                        if (tapTimestamps.size >= requiredTapCount) {
+                            Log.d(TAG, "Tap pattern detected! Triggering SOS")
+                            lastTapTriggerTime = now
+                            resetTapState()
+                            sosManager.trigger()
+                        }
+                    }
                 }
             }
         }
@@ -242,5 +302,12 @@ class SosTriggerDetector
             shakeStartTime = 0L
             shakeAccumulatedMs = 0L
             lastShakeEventTime = 0L
+        }
+
+        private fun resetTapState() {
+            tapTimestamps.clear()
+            inTapSpike = false
+            tapSpikeStartTime = 0L
+            lastTapRegisteredTime = 0L
         }
     }
