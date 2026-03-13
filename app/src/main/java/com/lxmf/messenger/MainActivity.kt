@@ -1485,6 +1485,12 @@ fun ColumbaNavigation(
                                     popUpTo("usb_device_action") { inclusive = true }
                                 }
                             },
+                            onConfigureTransport = {
+                                // TODO: navigate to transport configuration
+                            },
+                            onDisableTransport = {
+                                // TODO: handle disable transport
+                            },
                         )
                     }
 
@@ -1955,6 +1961,9 @@ fun ColumbaNavigation(
                                 val encodedHash = Uri.encode(destHash)
                                 val encodedName = Uri.encode(peerName)
                                 navController.navigate("messaging/$encodedHash/$encodedName")
+                            },
+                            onViewAnnounce = { destHash ->
+                                navController.navigate("announce_detail/$destHash")
                             },
                         )
                     }

@@ -72,8 +72,7 @@ fun SosEmergencyCard(
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            if (sosEnabled) {
-                Text(
+            Text(
                     "$sosContactCount SOS contact(s) configured",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (sosContactCount == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -306,7 +305,6 @@ fun SosEmergencyCard(
                     supportingText = { Text("4-6 digit PIN required to deactivate SOS") },
                     singleLine = true,
                 )
-            }
         }
     }
 }

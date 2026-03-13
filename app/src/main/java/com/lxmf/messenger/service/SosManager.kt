@@ -272,10 +272,30 @@ class SosManager
             periodicUpdateJob = scope.launch {
                 try {
                     val intervalSeconds = settingsRepository.sosUpdateIntervalSeconds.first()
-                    val identity = loadIdentity() ?: return@launch
+
+                    // Wait for the Reticulum service to be bound and ready before
+                    // loading identity. At boot, the mesh network may not be up yet.
+                    if (reticulumProtocol is ServiceReticulumProtocol) {
+                        try {
+                            reticulumProtocol.bindService()
+                            reticulumProtocol.waitForReady(timeoutMs = 30_000)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Reticulum not ready yet, periodic updates will retry", e)
+                        }
+                    }
+
+                    var identity = loadIdentity()
 
                     while (true) {
                         delay(intervalSeconds * 1_000L)
+
+                        // Retry identity load if it failed on first attempt (service wasn't ready)
+                        if (identity == null) {
+                            identity = loadIdentity()
+                            if (identity == null) continue
+                        }
 
                         val updateMessage = buildString {
                             append("SOS Update")

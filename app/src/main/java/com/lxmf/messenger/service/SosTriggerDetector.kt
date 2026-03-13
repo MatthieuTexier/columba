@@ -165,10 +165,17 @@ class SosTriggerDetector
         }
 
         /**
-         * Start observing SOS settings and automatically manage the sensor listener.
+         * Start observing SOS settings and [SosManager] state to manage:
+         * 1. The accelerometer sensor listener (shake/tap detection)
+         * 2. The [SosTriggerService] foreground service lifecycle
+         *
+         * The foreground service runs whenever:
+         * - Trigger detection is active (SOS enabled + non-MANUAL mode), OR
+         * - SOS is in an active state (Countdown / Sending / Active) — keeps the
+         *   process alive for periodic location updates and message sending,
+         *   including after a device reboot.
+         *
          * Should be called once at app startup (main process only).
-         * Starts the detector when SOS is enabled with a non-MANUAL trigger mode,
-         * stops it when SOS is disabled or mode switches to MANUAL.
          */
         fun startObserving() {
             scope.launch {
@@ -177,13 +184,25 @@ class SosTriggerDetector
                     settingsRepository.sosTriggerMode,
                     settingsRepository.sosShakeSensitivity,
                     settingsRepository.sosTapCount,
-                ) { enabled, mode, _, _ -> enabled to mode }
+                    sosManager.state,
+                ) { enabled, mode, _, _, sosState ->
+                    Triple(enabled, mode, sosState !is SosState.Idle)
+                }
                     .distinctUntilChanged()
-                    .collect { (enabled, mode) ->
-                        if (enabled && SosTriggerMode.fromKey(mode) != SosTriggerMode.MANUAL) {
+                    .collect { (enabled, mode, sosActive) ->
+                        val triggerNeeded = enabled &&
+                            SosTriggerMode.fromKey(mode) != SosTriggerMode.MANUAL
+
+                        if (triggerNeeded) {
                             reloadSettings()
                         } else {
                             stop()
+                        }
+
+                        if (triggerNeeded || sosActive) {
+                            SosTriggerService.start(context)
+                        } else {
+                            SosTriggerService.stop(context)
                         }
                     }
             }
