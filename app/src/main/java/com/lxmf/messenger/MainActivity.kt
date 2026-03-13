@@ -1026,24 +1026,32 @@ fun ColumbaNavigation(
             @Suppress("UnusedMaterial3ScaffoldPaddingParameter")
             Scaffold(
                 bottomBar = {
-                    if (shouldShowBottomNav) {
-                        NavigationBar {
-                            screens.forEachIndexed { index, screen ->
-                                NavigationBarItem(
-                                    icon = { Icon(screen.icon, contentDescription = null) },
-                                    label = { Text(screen.title) },
-                                    selected = selectedTab == index,
-                                    onClick = {
-                                        selectedTab = index
-                                        navController.navigate(screen.route) {
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
+                    Column {
+                        SosOverlay(
+                            sosState = sosState,
+                            sosDeactivationPin = settingsState.sosDeactivationPin,
+                            onCancel = { sosViewModel.cancel() },
+                            onDeactivate = { pin -> sosViewModel.deactivate(pin) },
+                        )
+                        if (shouldShowBottomNav) {
+                            NavigationBar {
+                                screens.forEachIndexed { index, screen ->
+                                    NavigationBarItem(
+                                        icon = { Icon(screen.icon, contentDescription = null) },
+                                        label = { Text(screen.title) },
+                                        selected = selectedTab == index,
+                                        onClick = {
+                                            selectedTab = index
+                                            navController.navigate(screen.route) {
+                                                popUpTo(navController.graph.startDestinationId) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                )
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -2051,14 +2059,6 @@ fun ColumbaNavigation(
                     }
                 }
                 } // end Column
-
-                    SosOverlay(
-                        sosState = sosState,
-                        sosDeactivationPin = settingsState.sosDeactivationPin,
-                        onCancel = { sosViewModel.cancel() },
-                        onDeactivate = { pin -> sosViewModel.deactivate(pin) },
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
                 } // end Box
 
                 // Bluetooth permission bottom sheet

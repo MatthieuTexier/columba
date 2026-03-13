@@ -1,0 +1,460 @@
+package com.lxmf.messenger.service
+
+import android.content.Context
+import com.lxmf.messenger.repository.SettingsRepository
+import io.mockk.Runs
+import io.mockk.clearAllMocks
+import io.mockk.every
+import io.mockk.just
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Test
+
+/**
+ * Unit tests for [SosTriggerDetector] spike-based tap detection and shake detection.
+ *
+ * Tests call [handleTap]/[handleShake] directly with controlled timestamps,
+ * bypassing the sensor layer. This isolates the detection state machines from
+ * Android sensor APIs.
+ */
+class SosTriggerDetectorTest {
+    private lateinit var context: Context
+    private lateinit var settingsRepository: SettingsRepository
+    private lateinit var sosManager: SosManager
+    private lateinit var detector: SosTriggerDetector
+
+    @Before
+    fun setup() {
+        context = mockk(relaxed = true)
+        settingsRepository = mockk()
+        sosManager = mockk()
+
+        every { sosManager.trigger() } just Runs
+        every { sosManager.state } returns MutableStateFlow(SosState.Idle)
+
+        detector = SosTriggerDetector(context, settingsRepository, sosManager)
+    }
+
+    @After
+    fun tearDown() {
+        clearAllMocks()
+    }
+
+    // ========== Tap Detection — Spike-Based State Machine ==========
+
+    /**
+     * Simulate a single tap: rising edge (above threshold) → falling edge (below threshold).
+     * @param startTime timestamp of the rising edge
+     * @param spikeDurationMs how long the spike lasts (must be ≤100ms for a valid tap)
+     * @param peakAcceleration net acceleration during the spike (must be > 4.0 m/s²)
+     */
+    private fun simulateTap(
+        startTime: Long,
+        spikeDurationMs: Long = 50,
+        peakAcceleration: Float = 6.0f,
+    ) {
+        // Rising edge
+        detector.handleTap(peakAcceleration, startTime)
+        // Falling edge
+        detector.handleTap(1.0f, startTime + spikeDurationMs)
+    }
+
+    /**
+     * Simulate N taps spaced evenly apart.
+     * @return the timestamp after the last tap's falling edge
+     */
+    private fun simulateNTaps(
+        count: Int,
+        startTime: Long = 10_000L,
+        intervalMs: Long = 300L,
+        spikeDurationMs: Long = 50,
+    ): Long {
+        var t = startTime
+        repeat(count) {
+            simulateTap(t, spikeDurationMs)
+            t += intervalMs
+        }
+        return t
+    }
+
+    @Test
+    fun `single tap does not trigger SOS`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        simulateTap(startTime = 10_000L)
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `two taps do not trigger when three required`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        simulateNTaps(count = 2)
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `three taps within window triggers SOS`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        simulateNTaps(count = 3)
+
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `five taps triggers SOS when required count is 5`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 5
+
+        simulateNTaps(count = 5)
+
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `four taps do not trigger when five required`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 5
+
+        simulateNTaps(count = 4)
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `taps outside 2500ms window do not accumulate`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        // Two taps at the beginning
+        simulateTap(startTime = 10_000L)
+        simulateTap(startTime = 10_300L)
+
+        // Third tap way outside the window (>2500ms later)
+        simulateTap(startTime = 13_000L)
+
+        // Only 1 tap in window (the third one), first two expired
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `long spike is rejected as walking step`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        val t = 10_000L
+        // Three "taps" but each spike lasts 150ms (>MAX_TAP_SPIKE_MS of 100ms)
+        repeat(3) { i ->
+            val start = t + i * 300L
+            // Rising edge
+            detector.handleTap(6.0f, start)
+            // Sustained above threshold for 110ms (> 100ms limit)
+            detector.handleTap(6.0f, start + 110)
+            // Now it's been too long — spike is aborted by the state machine
+            // Falling edge after abort
+            detector.handleTap(1.0f, start + 150)
+        }
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `taps too close together are deduplicated`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        val t = 10_000L
+        // First tap
+        simulateTap(t)
+        // Second tap only 100ms later (< TAP_MIN_INTERVAL_MS of 150ms)
+        simulateTap(t + 100)
+        // Third tap at 200ms (still < 150ms from the second attempt, but the second
+        // was rejected, so 200ms from first registered tap is fine)
+        simulateTap(t + 200)
+        // Fourth tap
+        simulateTap(t + 400)
+
+        // Only 3 registered: t+50 (first falling edge), t+250 (third falling edge, 200ms gap from first), t+450
+        // That should be enough
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `cooldown prevents re-trigger after tap pattern`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        // First trigger
+        val t1End = simulateNTaps(count = 3, startTime = 10_000L)
+        verify(exactly = 1) { sosManager.trigger() }
+
+        // Attempt to trigger again within cooldown (5000ms)
+        simulateNTaps(count = 3, startTime = t1End + 1_000L)
+
+        // Still only 1 trigger
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `tap works again after cooldown expires`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        // First trigger
+        simulateNTaps(count = 3, startTime = 10_000L)
+        verify(exactly = 1) { sosManager.trigger() }
+
+        // After cooldown (>5000ms from last trigger)
+        simulateNTaps(count = 3, startTime = 20_000L)
+
+        verify(exactly = 2) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `below-threshold acceleration does not register as tap`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        val t = 10_000L
+        // Acceleration below TAP_THRESHOLD (4.0 m/s²) — no spike starts
+        repeat(5) { i ->
+            detector.handleTap(3.0f, t + i * 300L)
+            detector.handleTap(1.0f, t + i * 300L + 50)
+        }
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `resetTapState clears all tap state`() {
+        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.requiredTapCount = 3
+
+        // Register 2 taps
+        simulateNTaps(count = 2, startTime = 10_000L)
+        verify(exactly = 0) { sosManager.trigger() }
+
+        // Reset mid-sequence
+        detector.resetTapState()
+
+        // Need 3 more taps from scratch
+        simulateNTaps(count = 2, startTime = 11_000L)
+        verify(exactly = 0) { sosManager.trigger() }
+
+        simulateNTaps(count = 3, startTime = 12_000L)
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    // ========== Shake Detection ==========
+
+    @Test
+    fun `brief shake below duration does not trigger`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f // ~24.5 m/s²
+        val t = 10_000L
+
+        // Above threshold for only 200ms (< SHAKE_DURATION_MS of 500ms)
+        detector.handleShake(threshold + 5f, t)
+        detector.handleShake(threshold + 5f, t + 100)
+        detector.handleShake(threshold + 5f, t + 200)
+        // Drop below threshold
+        detector.handleShake(1.0f, t + 201)
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `sustained shake triggers SOS`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // Sustained above threshold for 600ms (> SHAKE_DURATION_MS of 500ms)
+        // Simulate sensor events every 100ms
+        for (i in 0..6) {
+            detector.handleShake(threshold + 5f, t + i * 100L)
+        }
+
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `shake below threshold does not trigger`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // Acceleration below threshold for a long time
+        for (i in 0..20) {
+            detector.handleShake(threshold - 5f, t + i * 100L)
+        }
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `shake outside 1000ms window resets`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // Above threshold but window exceeds SHAKE_WINDOW_MS (1000ms)
+        detector.handleShake(threshold + 5f, t)
+        detector.handleShake(threshold + 5f, t + 400)
+        // Jump past the 1000ms window
+        detector.handleShake(threshold + 5f, t + 1_100)
+
+        // Window expired, state should have reset; continue shaking
+        detector.handleShake(threshold + 5f, t + 1_200)
+        detector.handleShake(threshold + 5f, t + 1_300)
+
+        // Not enough accumulated time in new window
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `gap in shake resets state`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // Shake for 300ms
+        detector.handleShake(threshold + 5f, t)
+        detector.handleShake(threshold + 5f, t + 100)
+        detector.handleShake(threshold + 5f, t + 200)
+        detector.handleShake(threshold + 5f, t + 300)
+
+        // Drop below threshold with gap > 200ms
+        detector.handleShake(1.0f, t + 600)
+
+        // Resume shaking — state was reset
+        detector.handleShake(threshold + 5f, t + 700)
+        detector.handleShake(threshold + 5f, t + 800)
+        detector.handleShake(threshold + 5f, t + 900)
+
+        // Not enough continuous time since reset
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `shake cooldown prevents re-trigger`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // First trigger
+        for (i in 0..6) {
+            detector.handleShake(threshold + 5f, t + i * 100L)
+        }
+        verify(exactly = 1) { sosManager.trigger() }
+
+        // Try again within cooldown (5000ms)
+        val t2 = t + 2_000L
+        for (i in 0..6) {
+            detector.handleShake(threshold + 5f, t2 + i * 100L)
+        }
+
+        // Still only 1 trigger
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `shake works again after cooldown expires`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // First trigger
+        for (i in 0..6) {
+            detector.handleShake(threshold + 5f, t + i * 100L)
+        }
+        verify(exactly = 1) { sosManager.trigger() }
+
+        // After cooldown (>5000ms)
+        val t2 = t + 20_000L
+        for (i in 0..6) {
+            detector.handleShake(threshold + 5f, t2 + i * 100L)
+        }
+
+        verify(exactly = 2) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `higher sensitivity requires less acceleration`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 1.0f // Low sensitivity → lower threshold
+
+        val threshold = 1.0f * 9.81f // ~9.81 m/s²
+        val t = 10_000L
+
+        // This acceleration is above low threshold but would be below 2.5x threshold
+        for (i in 0..6) {
+            detector.handleShake(threshold + 2f, t + i * 100L)
+        }
+
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `resetShakeState clears shake tracking`() {
+        detector.currentMode = SosTriggerMode.SHAKE
+        detector.shakeSensitivity = 2.5f
+
+        val threshold = 2.5f * 9.81f
+        val t = 10_000L
+
+        // Accumulate 400ms of shake
+        for (i in 0..4) {
+            detector.handleShake(threshold + 5f, t + i * 100L)
+        }
+
+        // Reset mid-shake
+        detector.resetShakeState()
+
+        // Continue shaking — but accumulated time was reset
+        for (i in 5..7) {
+            detector.handleShake(threshold + 5f, t + i * 100L)
+        }
+
+        // Only 300ms accumulated after reset, not enough
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    // ========== SosTriggerMode Enum Tests ==========
+
+    @Test
+    fun `fromKey returns MANUAL for unknown key`() {
+        assertEquals(SosTriggerMode.MANUAL, SosTriggerMode.fromKey("unknown"))
+    }
+
+    @Test
+    fun `fromKey returns correct mode for each key`() {
+        assertEquals(SosTriggerMode.MANUAL, SosTriggerMode.fromKey("manual"))
+        assertEquals(SosTriggerMode.SHAKE, SosTriggerMode.fromKey("shake"))
+        assertEquals(SosTriggerMode.TAP_PATTERN, SosTriggerMode.fromKey("tap_pattern"))
+    }
+}

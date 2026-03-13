@@ -3,6 +3,7 @@ package com.lxmf.messenger.service
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
+import android.os.BatteryManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.lxmf.messenger.data.model.EnrichedContact
 import com.lxmf.messenger.data.repository.ContactRepository
@@ -91,7 +92,7 @@ class SosManagerTest {
         // Default sendLxmfMessageWithMethod mock
         coEvery {
             reticulumProtocol.sendLxmfMessageWithMethod(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
             )
         } returns Result.success(mockReceipt)
 
@@ -282,7 +283,7 @@ class SosManagerTest {
                             .map { b -> b.toInt(16).toByte() }.toByteArray(),
                     )
                 },
-                any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
             )
         } returns Result.failure(RuntimeException("Network error"))
 
@@ -449,6 +450,9 @@ class SosManagerTest {
         every { mockLocation.latitude } returns 48.8566
         every { mockLocation.longitude } returns 2.3522
         every { mockLocation.accuracy } returns 10f
+        every { mockLocation.hasAltitude() } returns false
+        every { mockLocation.hasSpeed() } returns false
+        every { mockLocation.hasBearing() } returns false
         every { mockLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } returns mockLocation
 
         sosManager.trigger()
@@ -466,6 +470,7 @@ class SosManagerTest {
                 fileAttachments = any(),
                 replyToMessageId = any(),
                 iconAppearance = any(),
+                telemetryJson = any(),
             )
         }
     }
@@ -493,6 +498,219 @@ class SosManagerTest {
                 fileAttachments = any(),
                 replyToMessageId = any(),
                 iconAppearance = any(),
+                telemetryJson = any(),
+            )
+        }
+    }
+
+    // ========== Restore State Tests ==========
+
+    @Test
+    fun `restoreIfActive when not previously active does nothing`() = runTest {
+        every { settingsRepository.sosActive } returns flowOf(false)
+
+        sosManager.restoreIfActive()
+        advanceUntilIdle()
+
+        assertEquals(SosState.Idle, sosManager.state.value)
+        verify(exactly = 0) { notificationHelper.showSosActiveNotification(any(), any()) }
+    }
+
+    @Test
+    fun `restoreIfActive when previously active restores Active state`() = runTest {
+        every { settingsRepository.sosActive } returns flowOf(true)
+        every { settingsRepository.sosActiveSentCount } returns flowOf(3)
+        every { settingsRepository.sosActiveFailedCount } returns flowOf(1)
+        every { settingsRepository.sosPeriodicUpdates } returns flowOf(false)
+
+        sosManager.restoreIfActive()
+        advanceUntilIdle()
+
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(3, (state as SosState.Active).sentCount)
+        assertEquals(1, state.failedCount)
+    }
+
+    @Test
+    fun `restoreIfActive shows notification with persisted counts`() = runTest {
+        every { settingsRepository.sosActive } returns flowOf(true)
+        every { settingsRepository.sosActiveSentCount } returns flowOf(2)
+        every { settingsRepository.sosActiveFailedCount } returns flowOf(1)
+        every { settingsRepository.sosPeriodicUpdates } returns flowOf(false)
+
+        sosManager.restoreIfActive()
+        advanceUntilIdle()
+
+        verify { notificationHelper.showSosActiveNotification(2, 1) }
+    }
+
+    @Test
+    fun `restoreIfActive starts periodic updates when enabled`() = runTest {
+        every { settingsRepository.sosActive } returns flowOf(true)
+        every { settingsRepository.sosActiveSentCount } returns flowOf(1)
+        every { settingsRepository.sosActiveFailedCount } returns flowOf(0)
+        every { settingsRepository.sosPeriodicUpdates } returns flowOf(true)
+        every { settingsRepository.sosUpdateIntervalSeconds } returns flowOf(60)
+
+        sosManager.restoreIfActive()
+        // Only advance enough to let restoreIfActive complete and start periodic updates.
+        // Don't use advanceUntilIdle() — startPeriodicUpdates() has an infinite loop.
+        advanceTimeBy(500)
+
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+
+        // Deactivate to cancel the periodic update coroutine
+        sosManager.deactivate()
+    }
+
+    // ========== Persistence Tests ==========
+
+    @Test
+    fun `sendSosMessages persists active state`() = runTest {
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(0)
+        val contact = makeContact("0a0b0c0d0e0f1011")
+        coEvery { contactRepository.getSosContacts() } returns listOf(contact)
+
+        sosManager.trigger()
+        advanceUntilIdle()
+
+        coVerify { settingsRepository.persistSosActiveState(1, 0) }
+    }
+
+    @Test
+    fun `deactivate clears persisted state`() = runTest {
+        triggerAndWaitForActive()
+        advanceUntilIdle()
+        assertTrue(sosManager.state.value is SosState.Active)
+
+        sosManager.deactivate()
+        advanceUntilIdle()
+
+        coVerify { settingsRepository.clearSosActiveState() }
+    }
+
+    @Test
+    fun `sendSosMessages persists correct failure count`() = runTest {
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(0)
+
+        val contact1 = makeContact("0a0b0c0d0e0f1011")
+        val contact2 = makeContact("1a1b1c1d1e1f2021")
+        coEvery { contactRepository.getSosContacts() } returns listOf(contact1, contact2)
+
+        // Second contact fails
+        coEvery {
+            reticulumProtocol.sendLxmfMessageWithMethod(
+                match {
+                    it.contentEquals(
+                        contact2.destinationHash.chunked(2)
+                            .map { b -> b.toInt(16).toByte() }.toByteArray(),
+                    )
+                },
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+            )
+        } returns Result.failure(RuntimeException("Network error"))
+
+        sosManager.trigger()
+        advanceUntilIdle()
+
+        coVerify { settingsRepository.persistSosActiveState(1, 1) }
+    }
+
+    @Test
+    fun `sendSosMessages with failed identity does not send but persists state`() = runTest {
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(0)
+        val contact = makeContact("0a0b0c0d0e0f1011")
+        coEvery { contactRepository.getSosContacts() } returns listOf(contact)
+        coEvery { reticulumProtocol.loadIdentity("default_identity") } returns Result.failure(RuntimeException("No identity"))
+
+        sosManager.trigger()
+        advanceUntilIdle()
+
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(0, (state as SosState.Active).sentCount)
+        assertEquals(1, state.failedCount)
+    }
+
+    // ========== Battery Level Tests ==========
+
+    @Test
+    fun `message includes battery level when available`() = runTest {
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(0)
+        every { settingsRepository.sosIncludeLocation } returns flowOf(false)
+
+        val contact = makeContact("0a0b0c0d0e0f1011")
+        coEvery { contactRepository.getSosContacts() } returns listOf(contact)
+
+        val mockBatteryManager = mockk<BatteryManager>()
+        every { context.getSystemService(Context.BATTERY_SERVICE) } returns mockBatteryManager
+        every { mockBatteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) } returns 73
+
+        sosManager.trigger()
+        advanceUntilIdle()
+
+        coVerify {
+            reticulumProtocol.sendLxmfMessageWithMethod(
+                destinationHash = any(),
+                content = match { it.contains("Battery: 73%") },
+                sourceIdentity = any(),
+                deliveryMethod = any(),
+                tryPropagationOnFail = any(),
+                imageData = any(),
+                imageFormat = any(),
+                fileAttachments = any(),
+                replyToMessageId = any(),
+                iconAppearance = any(),
+                telemetryJson = any(),
+            )
+        }
+    }
+
+    @Test
+    fun `message includes both GPS and battery when both available`() = runTest {
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(0)
+        every { settingsRepository.sosIncludeLocation } returns flowOf(true)
+
+        val contact = makeContact("0a0b0c0d0e0f1011")
+        coEvery { contactRepository.getSosContacts() } returns listOf(contact)
+
+        val mockLocationManager = mockk<LocationManager>()
+        every { context.getSystemService(Context.LOCATION_SERVICE) } returns mockLocationManager
+        val mockLocation = mockk<Location>()
+        every { mockLocation.latitude } returns 48.8566
+        every { mockLocation.longitude } returns 2.3522
+        every { mockLocation.accuracy } returns 10f
+        every { mockLocation.hasAltitude() } returns false
+        every { mockLocation.hasSpeed() } returns false
+        every { mockLocation.hasBearing() } returns false
+        every { mockLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } returns mockLocation
+
+        val mockBatteryManager = mockk<BatteryManager>()
+        every { context.getSystemService(Context.BATTERY_SERVICE) } returns mockBatteryManager
+        every { mockBatteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) } returns 42
+        every { mockBatteryManager.isCharging } returns false
+
+        sosManager.trigger()
+        advanceUntilIdle()
+
+        coVerify {
+            reticulumProtocol.sendLxmfMessageWithMethod(
+                destinationHash = any(),
+                content = match {
+                    it.contains("GPS: 48.8566, 2.3522") &&
+                        it.contains("Battery: 42%")
+                },
+                sourceIdentity = any(),
+                deliveryMethod = any(),
+                tryPropagationOnFail = any(),
+                imageData = any(),
+                imageFormat = any(),
+                fileAttachments = any(),
+                replyToMessageId = any(),
+                iconAppearance = any(),
+                telemetryJson = any(),
             )
         }
     }

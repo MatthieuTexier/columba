@@ -2,7 +2,6 @@ package com.lxmf.messenger.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,7 +46,7 @@ import com.lxmf.messenger.service.SosState
  * @param sosDeactivationPin Configured deactivation PIN (null/blank = no PIN required).
  * @param onCancel Called when the user cancels during the countdown phase.
  * @param onDeactivate Called with the entered PIN (or null) when deactivating. Returns true on success.
- * @param modifier Applied to the active-state banner Row (use [Alignment.BottomCenter] inside a Box).
+ * @param modifier Applied to the active-state banner.
  */
 @Composable
 fun SosOverlay(
@@ -124,46 +123,44 @@ fun SosOverlay(
             var showDeactivateDialog by remember { mutableStateOf(false) }
 
             // Persistent active-state banner
-            Box(modifier = modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.error)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Warning,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onError,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                "SOS ACTIVE",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onError,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            if (state.sentCount > 0 || state.failedCount > 0) {
-                                Text(
-                                    "${state.sentCount} sent · ${state.failedCount} failed",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onError.copy(alpha = 0.8f),
-                                )
-                            }
-                        }
-                    }
-                    TextButton(onClick = { showDeactivateDialog = true }) {
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.error)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onError,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
                         Text(
-                            "DEACTIVATE",
+                            "SOS ACTIVE",
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onError,
                             fontWeight = FontWeight.Bold,
                         )
+                        if (state.sentCount > 0 || state.failedCount > 0) {
+                            Text(
+                                "${state.sentCount} sent · ${state.failedCount} failed",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onError.copy(alpha = 0.8f),
+                            )
+                        }
                     }
+                }
+                TextButton(onClick = { showDeactivateDialog = true }) {
+                    Text(
+                        "DEACTIVATE",
+                        color = MaterialTheme.colorScheme.onError,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
 

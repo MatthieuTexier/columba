@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
+import android.os.BatteryManager
 import android.util.Log
+import org.json.JSONObject
 import com.lxmf.messenger.data.repository.ContactRepository
 import com.lxmf.messenger.notifications.NotificationHelper
 import com.lxmf.messenger.repository.SettingsRepository
@@ -204,15 +206,22 @@ class SosManager
             val template = settingsRepository.sosMessageTemplate.first()
             val includeLocation = settingsRepository.sosIncludeLocation.first()
 
+            val location = if (includeLocation) getLastKnownLocation() else null
+            val batteryLevel = getBatteryLevel()
+
             val messageContent = buildString {
                 append(template)
-                if (includeLocation) {
-                    getLastKnownLocation()?.let { location ->
-                        append("\nGPS: ${location.latitude}, ${location.longitude}")
-                        append(" (accuracy: ${location.accuracy.toInt()}m)")
-                    }
+                location?.let {
+                    append("\nGPS: ${it.latitude}, ${it.longitude}")
+                    append(" (accuracy: ${it.accuracy.toInt()}m)")
+                }
+                batteryLevel?.let { level ->
+                    append("\nBattery: $level%")
                 }
             }
+
+            // Build FIELD_TELEMETRY JSON for Sideband-compatible telemetry
+            val telemetryJson = buildTelemetryJson(location, batteryLevel)
 
             val contacts = contactRepository.getSosContacts()
             if (contacts.isEmpty()) {
@@ -240,6 +249,7 @@ class SosManager
                         destinationHash = destHashBytes,
                         content = messageContent,
                         sourceIdentity = identity,
+                        telemetryJson = telemetryJson,
                     )
                     if (result.isSuccess) {
                         sentCount++
@@ -297,13 +307,21 @@ class SosManager
                             if (identity == null) continue
                         }
 
+                        val updateLocation = getLastKnownLocation()
+                        val updateBattery = getBatteryLevel()
+
                         val updateMessage = buildString {
                             append("SOS Update")
-                            getLastKnownLocation()?.let { location ->
-                                append(" - GPS: ${location.latitude}, ${location.longitude}")
-                                append(" (accuracy: ${location.accuracy.toInt()}m)")
+                            updateLocation?.let { loc ->
+                                append(" - GPS: ${loc.latitude}, ${loc.longitude}")
+                                append(" (accuracy: ${loc.accuracy.toInt()}m)")
+                            }
+                            updateBattery?.let { level ->
+                                append(" - Battery: $level%")
                             }
                         }
+
+                        val updateTelemetry = buildTelemetryJson(updateLocation, updateBattery)
 
                         val contacts = contactRepository.getSosContacts()
                         for (contact in contacts) {
@@ -313,6 +331,7 @@ class SosManager
                                     destinationHash = destHashBytes,
                                     content = updateMessage,
                                     sourceIdentity = identity,
+                                    telemetryJson = updateTelemetry,
                                 )
                             } catch (e: CancellationException) {
                                 throw e
@@ -338,6 +357,43 @@ class SosManager
                     ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
             } catch (e: Exception) {
                 Log.e(TAG, "Error getting last known location", e)
+                null
+            }
+
+        private fun buildTelemetryJson(location: Location?, batteryLevel: Int?): String? {
+            if (location == null && batteryLevel == null) return null
+            return JSONObject().apply {
+                if (location != null) {
+                    put("lat", location.latitude)
+                    put("lng", location.longitude)
+                    put("acc", location.accuracy.toDouble())
+                    put("ts", System.currentTimeMillis())
+                    if (location.hasAltitude()) put("altitude", location.altitude)
+                    if (location.hasSpeed()) put("speed", location.speed.toDouble())
+                    if (location.hasBearing()) put("bearing", location.bearing.toDouble())
+                }
+                if (batteryLevel != null) {
+                    put("battery_percent", batteryLevel)
+                    put("battery_charging", isBatteryCharging())
+                }
+            }.toString()
+        }
+
+        private fun isBatteryCharging(): Boolean =
+            try {
+                val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                batteryManager.isCharging
+            } catch (e: Exception) {
+                false
+            }
+
+        private fun getBatteryLevel(): Int? =
+            try {
+                val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                val level = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                if (level in 0..100) level else null
+            } catch (e: Exception) {
+                Log.e(TAG, "Error getting battery level", e)
                 null
             }
 

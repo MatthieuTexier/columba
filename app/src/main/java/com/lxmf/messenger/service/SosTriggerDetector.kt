@@ -85,9 +85,15 @@ class SosTriggerDetector
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         private var isListening = false
-        private var currentMode: SosTriggerMode = SosTriggerMode.MANUAL
-        private var shakeSensitivity = 2.5f
-        private var requiredTapCount = 3
+
+        /** Override in tests to set mode directly without sensor registration. */
+        internal var currentMode: SosTriggerMode = SosTriggerMode.MANUAL
+
+        /** Override in tests to control shake sensitivity. */
+        internal var shakeSensitivity = 2.5f
+
+        /** Override in tests to control required tap count. */
+        internal var requiredTapCount = 3
         private var settingsJob: Job? = null
 
         // Shake state
@@ -193,6 +199,11 @@ class SosTriggerDetector
                         val triggerNeeded = enabled &&
                             SosTriggerMode.fromKey(mode) != SosTriggerMode.MANUAL
 
+                        // Auto-deactivate SOS when the feature is disabled
+                        if (!enabled && sosActive) {
+                            sosManager.deactivate()
+                        }
+
                         if (triggerNeeded) {
                             reloadSettings()
                         } else {
@@ -236,7 +247,7 @@ class SosTriggerDetector
          * Shake detection: the net acceleration must exceed [shakeSensitivity] * GRAVITY
          * for a cumulative [SHAKE_DURATION_MS] within a [SHAKE_WINDOW_MS] sliding window.
          */
-        private fun handleShake(netAcceleration: Float, now: Long) {
+        internal fun handleShake(netAcceleration: Float, now: Long) {
             if (now - lastShakeTriggerTime < SHAKE_COOLDOWN_MS) return
 
             val threshold = shakeSensitivity * SensorManager.GRAVITY_EARTH
@@ -276,7 +287,7 @@ class SosTriggerDetector
          * taps (typically 20–80ms). The lower threshold is safe because the duration filter
          * prevents false positives from continuous motion.
          */
-        private fun handleTap(netAcceleration: Float, now: Long) {
+        internal fun handleTap(netAcceleration: Float, now: Long) {
             if (now - lastTapTriggerTime < TAP_COOLDOWN_MS) return
 
             if (!inTapSpike) {
@@ -317,13 +328,13 @@ class SosTriggerDetector
             }
         }
 
-        private fun resetShakeState() {
+        internal fun resetShakeState() {
             shakeStartTime = 0L
             shakeAccumulatedMs = 0L
             lastShakeEventTime = 0L
         }
 
-        private fun resetTapState() {
+        internal fun resetTapState() {
             tapTimestamps.clear()
             inTapSpike = false
             tapSpikeStartTime = 0L
