@@ -11,7 +11,7 @@
 Add a complete SOS Emergency feature to Columba, allowing users to send emergency distress signals to pre-selected contacts over the LXMF mesh network. The feature includes a full sender-side state machine with countdown, GPS location embedding, battery level reporting, Sideband-compatible LXMF telemetry (`FIELD_TELEMETRY`), periodic updates, and a receiver-side experience with urgent notifications, visual SOS message differentiation in chat, and one-tap map navigation.
 
 **Key capabilities:**
-- Designate contacts as "SOS contacts" (tag-based, persisted in DB)
+- Designate contacts as "SOS contacts" from Contacts or Chats screen (tag-based, persisted in DB)
 - Trigger SOS with optional countdown timer (configurable 0-30s)
 - Automatic GPS location and battery level embedding in SOS messages
 - Sideband-compatible LXMF telemetry (`FIELD_TELEMETRY 0x02`) with `SID_LOCATION` and `SID_BATTERY`
@@ -19,7 +19,9 @@ Add a complete SOS Emergency feature to Columba, allowing users to send emergenc
 - PIN-protected deactivation (optional)
 - Silent auto-answer for incoming calls during SOS (optional)
 - Floating SOS trigger button (optional)
-- Foreground service keeps accelerometer detection and active SOS alive in background
+- Multiple trigger modes can be active simultaneously (shake + tap + power button)
+- Power button detection: 3 rapid presses trigger SOS
+- Foreground service keeps accelerometer/power button detection and active SOS alive in background
 - Automatic startup on device boot — no need to open the app after reboot
 - Reboot resilience: active SOS state, periodic updates, and trigger detection resume automatically
 - Receiver-side: urgent persistent notifications with "Open Chat" and "View on Map" actions
@@ -52,7 +54,7 @@ All SOS settings are in a dedicated collapsible card in Settings. The feature is
 ### Sender Side
 
 #### SOS Contact Management
-- In the **Contacts** screen, long-press a contact → context menu → "Mark as SOS Contact" / "Unmark as SOS Contact"
+- In the **Contacts** or **Chats** screen, long-press a contact/conversation → context menu → "Mark as SOS Contact" / "Unmark as SOS Contact" (Chats shows this option only for saved contacts)
 - SOS contacts display a small red warning badge overlay on their avatar (top-start corner)
 - `EnrichedContact.isSosContact` computed property parses the JSON tags for the `"sos"` tag
 
@@ -68,7 +70,7 @@ All SOS settings are in a dedicated collapsible card in Settings. The feature is
 | Deactivation PIN | `null` | Optional PIN required to cancel SOS |
 | Periodic Updates | `false` | Send location updates while SOS is active |
 | Update Interval | `120` seconds | Interval between periodic location updates |
-| Trigger Mode | `manual` | How SOS is activated: `manual`, `shake`, or `tap_pattern` |
+| Trigger Modes | `{}` (empty set) | Which automatic triggers are active (multi-select): `shake`, `tap_pattern`, `power_button`. Empty = manual button only. |
 | Shake Sensitivity | `2.5x` | Multiplier of gravity for shake threshold (1.0-5.0, lower = more sensitive) |
 | Tap Count | `3` | Number of rapid taps required for tap pattern trigger (3-5, spike-based detection) |
 
@@ -76,18 +78,20 @@ All settings are persisted in DataStore (`SettingsRepository`) as typed `Flow<T>
 
 #### SOS Trigger Modes
 
-**Manual** (default): SOS is triggered via the floating button or programmatic API only.
+Trigger modes are multi-select: any combination can be active simultaneously. When no modes are selected, SOS can only be triggered manually (floating button or programmatic API). The UI uses checkboxes instead of radio buttons.
 
 **Shake**: The device accelerometer monitors for sustained vigorous shaking. The acceleration magnitude minus gravity must exceed `shakeSensitivity * 9.81 m/s²` for a cumulative 500ms within a 1-second window. A 5-second cooldown prevents repeat triggers.
 
 **Tap Pattern**: Uses a spike-based state machine for reliable detection. A tap is counted only when net acceleration crosses above 4.0 m/s² and returns below it within 100ms (a complete impulse event). This rejects walking steps (~150-300ms spike duration) and sustained vibrations while reliably catching brief finger taps (20-80ms). When `tapCount` taps are detected within a 2.5-second sliding window, SOS is triggered. A 150ms debounce between registered taps prevents ring-down artifacts from being double-counted. A 5-second cooldown prevents repeat triggers.
 
-Both gesture modes work through `SosTriggerDetector`, a singleton `SensorEventListener` that registers on the device's `TYPE_ACCELEROMETER` sensor with `SENSOR_DELAY_GAME` (~20ms sampling) for responsive tap detection. The detector is started when SOS is enabled with a non-manual trigger mode, and stopped otherwise.
+**Power Button**: Detects rapid `SCREEN_OFF` events via a `BroadcastReceiver`. 3 presses within a 2-second window trigger SOS. A 5-second cooldown prevents repeat triggers. This does not conflict with Android's built-in Emergency SOS (which requires 5 presses).
+
+Gesture modes (shake/tap) work through `SosTriggerDetector`, a singleton `SensorEventListener` registered on `TYPE_ACCELEROMETER` with `SENSOR_DELAY_GAME` (~20ms sampling). Power button detection uses a `BroadcastReceiver` for `ACTION_SCREEN_OFF`. All listeners are registered/unregistered based on the active mode set. When shake and tap are both active, each sensor event is dispatched to both handlers independently.
 
 #### Background Service & Boot Resilience
 
 `SosTriggerService` is a lightweight foreground service (type `specialUse`) that keeps the main process alive whenever:
-- Trigger detection is active (SOS enabled + non-MANUAL mode), OR
+- Trigger detection is active (SOS enabled + at least one trigger mode selected), OR
 - SOS is in an active state (Countdown / Sending / Active) — for periodic location updates
 
 `BootReceiver` listens for `BOOT_COMPLETED` and starts both `ReticulumService` (mesh network) and `SosTriggerService` (main process). This triggers `ColumbaApplication.onCreate()` which calls `sosManager.restoreIfActive()` and `sosTriggerDetector.startObserving()`. If SOS was active before reboot, the state is restored, periodic updates resume (after waiting for Reticulum to become ready), and trigger detection restarts — all without user interaction.
@@ -102,7 +106,7 @@ The SOS active state survives app kills and phone restarts:
 This ensures that if the phone reboots during an active SOS, the emergency state is restored and the persistent notification reappears.
 
 #### SOS Trigger Flow
-1. User triggers SOS (floating button, shake, tap pattern, or programmatic trigger)
+1. User triggers SOS (floating button, shake, tap pattern, power button, or programmatic trigger)
 2. If countdown > 0: state transitions to `Countdown`, timer ticks down, user can cancel
 3. If countdown = 0 or timer expires: state transitions to `Sending`
 4. `SosManager` collects all SOS-tagged contacts, builds the message:
@@ -163,7 +167,7 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 | `app/.../service/SosManager.kt` | Core state machine: `Idle` → `Countdown` → `Sending` → `Active`. Manages GPS, message sending, periodic updates, PIN deactivation. Injected with `CoroutineScope`, `ContactRepository`, `SettingsRepository`, `ReticulumProtocol`, `NotificationHelper`. |
 | `app/.../viewmodel/SosViewModel.kt` | Thin ViewModel wrapping `SosManager`. Exposes `state: StateFlow<SosState>`, `trigger()`, `cancel()`, `deactivate(pin)`. Used by UI screens. |
 | `app/.../ui/screens/settings/cards/SosEmergencyCard.kt` | Composable settings card with all SOS configuration options. Collapsible card with toggle switches, text fields, sliders. |
-| `app/.../service/SosTriggerDetector.kt` | Accelerometer-based SOS trigger detection. Supports shake and spike-based tap pattern modes via `SensorEventListener`. Singleton with `start()`/`stop()`/`reloadSettings()`/`startObserving()` API. Manages `SosTriggerService` lifecycle and auto-deactivates SOS when the feature toggle is disabled. |
+| `app/.../service/SosTriggerDetector.kt` | Multi-mode SOS trigger detection. Supports shake, spike-based tap pattern (`SensorEventListener`), and power button (`BroadcastReceiver` for `SCREEN_OFF`). Multiple modes can be active simultaneously. Singleton with `start()`/`stop()`/`reloadSettings()`/`startObserving()` API. Manages `SosTriggerService` lifecycle and auto-deactivates SOS when the feature toggle is disabled. |
 | `app/.../service/SosTriggerService.kt` | Lightweight foreground service (`specialUse`) with persistent notification. Keeps the main process alive for accelerometer detection and active SOS periodic updates. Started/stopped by `SosTriggerDetector.startObserving()`. |
 | `app/.../receiver/BootReceiver.kt` | `BOOT_COMPLETED` broadcast receiver. Starts `ReticulumService` and `SosTriggerService` on device boot so mesh networking and SOS detection/state resume automatically without user interaction. |
 | `app/.../ui/components/SosOverlay.kt` | Composable for SOS UI states: countdown dialog, sending dialog, active banner (placed in Scaffold `bottomBar` above NavigationBar), and deactivation dialog with optional PIN input. |
@@ -174,12 +178,15 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 |------|---------|
 | `data/.../model/EnrichedContact.kt` | Added `val isSosContact: Boolean get() = getTagsList().contains("sos")` |
 | `data/.../repository/ContactRepository.kt` | Added `toggleSosTag()`, `getSosContacts()`, `getSosContactsFlow()` methods |
-| `app/.../repository/SettingsRepository.kt` | Added 12 SOS DataStore properties: 9 original settings + 3 state persistence (`sosActive`, `sosActiveSentCount`, `sosActiveFailedCount`) + 3 trigger mode settings (`sosTriggerMode`, `sosShakeSensitivity`, `sosTapCount`) with getter flows and setter methods |
-| `app/.../viewmodel/SettingsViewModel.kt` | Added SOS state fields, collector coroutines for all 12 SOS settings + trigger mode, and setter methods (`setSosEnabled`, `setSosTriggerMode`, etc.) |
+| `app/.../repository/SettingsRepository.kt` | Added 12 SOS DataStore properties: 9 original settings + 3 state persistence (`sosActive`, `sosActiveSentCount`, `sosActiveFailedCount`) + trigger mode settings (`sosTriggerModes` as `Set<String>`, with legacy migration from single-mode string, `sosShakeSensitivity`, `sosTapCount`) with getter flows and setter methods |
+| `app/.../viewmodel/SettingsViewModel.kt` | Added SOS state fields (`sosTriggerModes: Set<String>`), collector coroutines for all SOS settings, and setter methods (`setSosEnabled`, `toggleSosTriggerMode`, etc.) |
 | `app/.../viewmodel/ContactsViewModel.kt` | Added `toggleSosTag(destinationHash)` method |
+| `app/.../viewmodel/ChatsViewModel.kt` | Added `isSosContact(peerHash)` flow, `toggleSosTag(peerHash)` for SOS contact management from Chats screen |
 | `app/.../notifications/NotificationHelper.kt` | Added `CHANNEL_ID_SOS`, `NOTIFICATION_ID_SOS`, `ACTION_SOS_CALL_BACK`, `ACTION_SOS_VIEW_MAP`. Added `notifySosReceived()`, `showSosActiveNotification()`, `cancelSosActiveNotification()`, `isSosMessage()`, `parseSosLocation()` |
 | `app/.../service/MessageCollector.kt` | Added SOS detection branch before regular notification posting |
 | `app/.../ui/screens/ContactsScreen.kt` | Added `isSos`/`onToggleSos` params to `ContactContextMenu`, SOS toggle menu item with Warning icon, red badge overlay on SOS contact avatars in `ContactListItem` |
+| `app/.../ui/screens/ChatsScreen.kt` | Added `isSos`/`onToggleSos` params to `ConversationContextMenu`, SOS toggle menu item (visible only for saved contacts) |
+| `data/.../repository/ContactRepository.kt` | Added `isSosContactFlow(destinationHash)` for observing SOS status of individual contacts |
 | `app/.../ui/screens/MessagingScreen.kt` | Added SOS bubble styling (`errorContainer` color), "SOS EMERGENCY" header badge, "View on Map" button for GPS-tagged messages, `isSosMessageContent()` and `parseSosGpsLocation()` helper functions |
 | `app/.../MainActivityIntentHandler.kt` | Added `ACTION_SOS_CALL_BACK` → conversation navigation, `ACTION_SOS_VIEW_MAP` → map focus navigation |
 | `app/.../MainActivity.kt` | Added `PendingNavigation.SosMapFocus` sealed class variant, navigation handler for SOS map focus. SosOverlay placed in Scaffold `bottomBar` slot (above NavigationBar) for reliable visibility across all screens. |
@@ -269,8 +276,8 @@ Tests the core state machine, telemetry, and persistence:
 - Strict mocks (`mockk()` not `mockk(relaxed = true)`) with explicit stubs for `Location` (`hasAltitude()`, `hasSpeed()`, `hasBearing()`) and `BatteryManager`
 - `advanceTimeBy(500)` (not `advanceUntilIdle()`) for tests involving `startPeriodicUpdates()` infinite loop
 
-### SosTriggerDetectorTest (23 tests)
-Tests spike-based tap detection and shake detection:
+### SosTriggerDetectorTest (30 tests)
+Tests spike-based tap detection, shake detection, power button detection, and multi-mode enum:
 - Single tap does not trigger, 3/5 taps trigger correctly
 - Tap window expiry resets count
 - Walking step rejection (>100ms spike duration)
@@ -278,6 +285,9 @@ Tests spike-based tap detection and shake detection:
 - Cooldown prevents repeat triggers
 - Threshold sensitivity levels
 - Shake duration, window, gap, and cooldown logic
+- Power button: 3 rapid presses trigger SOS, 2 presses don't, spread-out presses don't
+- `fromKey()` returns null for unknown keys, correct mode for valid keys
+- `fromKeys()` converts set of strings, ignores unknown keys
 
 ### BootReceiverTest (4 tests)
 Tests boot-time service startup:
@@ -307,8 +317,9 @@ Tests tag-based SOS contact management:
 ### Fixed Existing Tests
 - **ContactsScreenTest**: Updated 7 `ContactContextMenu` call sites with new `isSos`/`onToggleSos` params
 - **MessageCollectorTest**: Added `isSosMessage` stub (`every { notificationHelper.isSosMessage(any()) } returns false`)
-- **SettingsViewModelTest**: Added stubs for all 9 SOS settings flows + `contactRepository.getSosContactsFlow()`
+- **SettingsViewModelTest**: Added stubs for all SOS settings flows (`sosTriggerModes` as `Set<String>`) + `contactRepository.getSosContactsFlow()`
 - **SettingsViewModelIncomingMessageLimitTest**: Same SOS stubs
+- **ChatsScreenTest**: Added `isSosContact` mock stub for `ChatsViewModel`
 - **MessagingViewModelTest**: Updated all positional `any()` matchers (10→11) for new `telemetryJson` parameter
 
 ---
@@ -402,13 +413,13 @@ Tests tag-based SOS contact management:
 4. Receive regular message from A → verify normal bubble styling (not red)
 
 ### Scenario 15: Shake Trigger
-1. A enables SOS with trigger mode "Shake", sensitivity 2.5x
+1. A enables SOS, activates "Shake" trigger mode (checkbox), sensitivity 2.5x
 2. Shake phone vigorously for ~1 second → verify SOS countdown starts
 3. Let countdown complete → verify messages sent normally
 4. Verify gentle movements (walking, pocket) do NOT trigger SOS
 
 ### Scenario 16: Tap Pattern Trigger (Spike-Based)
-1. A enables SOS with trigger mode "Tap Pattern", 3 taps
+1. A enables SOS, activates "Tap Pattern" trigger mode (checkbox), 3 taps
 2. Tap back of phone 3 times at natural pace (~2s) → verify SOS countdown starts
 3. Verify 2 taps do NOT trigger SOS
 4. Set to 5 taps → verify 3 taps no longer trigger, 5 taps do
@@ -420,13 +431,26 @@ Tests tag-based SOS contact management:
 2. Immediately shake again → verify 5-second cooldown prevents re-trigger
 3. Wait 5+ seconds, shake → verify trigger fires
 
-### Scenario 18: Background Service Lifecycle
-1. Enable SOS with shake trigger → verify "SOS Monitoring Active" notification appears
+### Scenario 18: Power Button Trigger
+1. A enables SOS, activates "Power button" trigger mode (checkbox)
+2. Press power button 3 times rapidly (~1.5s) → verify SOS countdown starts
+3. Verify 2 presses do NOT trigger SOS
+4. Verify presses spread over >2 seconds do NOT trigger SOS
+5. Verify does not conflict with Android's built-in Emergency SOS (5 presses)
+
+### Scenario 19: Multi-Mode Triggers
+1. A enables SOS, activates both "Shake" and "Power button" trigger modes
+2. Shake phone → verify SOS triggers
+3. Deactivate, then press power button 3x → verify SOS triggers
+4. Enable all 3 modes simultaneously → verify each can trigger independently
+
+### Scenario 20: Background Service Lifecycle
+1. Enable SOS with any trigger mode → verify "SOS Monitoring Active" notification appears
 2. Navigate away from app → verify notification persists (service keeps process alive)
-3. Switch SOS to "Manual only" → verify notification disappears
-4. Re-enable shake trigger → notification reappears
+3. Uncheck all trigger modes → verify notification disappears
+4. Re-enable a trigger mode → notification reappears
 5. Disable SOS entirely → notification disappears
-6. Trigger SOS (Active state), switch trigger to Manual → verify notification stays (SOS is active)
+6. Trigger SOS (Active state), uncheck all modes → verify notification stays (SOS is active)
 7. Deactivate SOS → notification disappears
 
 ### Regression Checklist
@@ -452,7 +476,8 @@ _To be added after implementation._
 - **Medium risk**: Periodic GPS updates may impact battery — mitigated by configurable interval (default 120s) and opt-in setting
 - **Low risk**: Battery/telemetry data uses standard Sideband `FIELD_TELEMETRY` format — interoperable with existing Reticulum ecosystem clients
 - **Low risk**: Receiver-side changes are additive (new notification channel, new bubble color) — existing flows untouched when message is not SOS
-- **Low risk**: Accelerometer listener uses `SENSOR_DELAY_GAME` (~20ms) for reliable tap detection; unregistered when trigger mode is MANUAL; foreground service notification only shown when detection is active
+- **Low risk**: Accelerometer listener uses `SENSOR_DELAY_GAME` (~20ms) for reliable tap detection; unregistered when no gesture mode is active. Power button receiver registered only when power button mode is active. Foreground service notification only shown when detection is active
 - **Low risk**: State persistence uses existing DataStore infrastructure; 3 boolean/int keys with negligible storage overhead
 - **Low risk**: Boot receiver starts services automatically — if SOS is disabled, services stop within seconds after DataStore is read
 - **Medium risk**: Shake/tap false positives — mitigated by configurable sensitivity, cumulative duration threshold (shake), spike-based state machine with duration filter (tap rejects walking/sustained motion), and always requiring the countdown phase
+- **Low risk**: Power button trigger uses 3 presses (vs Android's 5-press Emergency SOS) — no conflict. SCREEN_OFF events are reliable across Android versions

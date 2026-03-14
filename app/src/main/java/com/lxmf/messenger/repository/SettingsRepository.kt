@@ -168,8 +168,10 @@ class SettingsRepository
             val SOS_ACTIVE_SENT_COUNT = intPreferencesKey("sos_active_sent_count")
             val SOS_ACTIVE_FAILED_COUNT = intPreferencesKey("sos_active_failed_count")
 
-            // SOS trigger modes
-            val SOS_TRIGGER_MODE = stringPreferencesKey("sos_trigger_mode")
+            // SOS trigger modes (multi-select set, migrated from legacy single-mode string)
+            val SOS_TRIGGER_MODES = stringSetPreferencesKey("sos_trigger_modes")
+            @Deprecated("Legacy single mode key, kept for migration")
+            val SOS_TRIGGER_MODE_LEGACY = stringPreferencesKey("sos_trigger_mode")
             val SOS_SHAKE_SENSITIVITY = floatPreferencesKey("sos_shake_sensitivity")
             val SOS_TAP_COUNT = intPreferencesKey("sos_tap_count")
         }
@@ -2095,15 +2097,23 @@ class SettingsRepository
 
         // ========== SOS Trigger Mode Settings ==========
 
-        val sosTriggerMode: Flow<String> =
+        @Suppress("DEPRECATION")
+        val sosTriggerModes: Flow<Set<String>> =
             context.dataStore.data
                 .map { preferences ->
-                    preferences[PreferencesKeys.SOS_TRIGGER_MODE] ?: "manual"
+                    // Migrate from legacy single-mode string if needed
+                    val newModes = preferences[PreferencesKeys.SOS_TRIGGER_MODES]
+                    if (newModes != null) {
+                        newModes
+                    } else {
+                        val legacy = preferences[PreferencesKeys.SOS_TRIGGER_MODE_LEGACY]
+                        if (legacy != null && legacy != "manual") setOf(legacy) else emptySet()
+                    }
                 }.distinctUntilChanged()
 
-        suspend fun setSosTriggerMode(mode: String) {
+        suspend fun setSosTriggerModes(modes: Set<String>) {
             context.dataStore.edit { preferences ->
-                preferences[PreferencesKeys.SOS_TRIGGER_MODE] = mode
+                preferences[PreferencesKeys.SOS_TRIGGER_MODES] = modes
             }
         }
 

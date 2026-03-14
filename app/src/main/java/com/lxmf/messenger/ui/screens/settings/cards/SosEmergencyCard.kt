@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -53,8 +54,8 @@ fun SosEmergencyCard(
     sosUpdateIntervalSeconds: Int,
     onSosUpdateIntervalSecondsChange: (Int) -> Unit,
     sosContactCount: Int,
-    sosTriggerMode: String,
-    onSosTriggerModeChange: (String) -> Unit,
+    sosTriggerModes: Set<String>,
+    onSosTriggerModeToggle: (String) -> Unit,
     sosShakeSensitivity: Float,
     onSosShakeSensitivityChange: (Float) -> Unit,
     sosTapCount: Int,
@@ -171,43 +172,42 @@ fun SosEmergencyCard(
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Trigger mode
-                Text("Trigger Mode", style = MaterialTheme.typography.bodyLarge)
+                // Trigger modes (multi-select)
+                Text("Trigger Modes", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "How SOS can be activated",
+                    "How SOS can be activated (in addition to the button)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                val triggerModes = SosTriggerMode.entries
-                val currentMode = SosTriggerMode.fromKey(sosTriggerMode)
-                triggerModes.forEach { mode ->
+                val activeModes = SosTriggerMode.fromKeys(sosTriggerModes)
+                SosTriggerMode.entries.forEach { mode ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        androidx.compose.material3.RadioButton(
-                            selected = currentMode == mode,
-                            onClick = { onSosTriggerModeChange(mode.key) },
+                        Checkbox(
+                            checked = mode in activeModes,
+                            onCheckedChange = { onSosTriggerModeToggle(mode.key) },
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
                                 when (mode) {
-                                    SosTriggerMode.MANUAL -> "Manual only"
                                     SosTriggerMode.SHAKE -> "Shake phone"
                                     SosTriggerMode.TAP_PATTERN -> "Tap pattern"
+                                    SosTriggerMode.POWER_BUTTON -> "Power button"
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                             Text(
                                 when (mode) {
-                                    SosTriggerMode.MANUAL -> "Button or programmatic trigger"
                                     SosTriggerMode.SHAKE -> "Shake the device vigorously to trigger"
                                     SosTriggerMode.TAP_PATTERN -> "Tap the back of the phone rapidly"
+                                    SosTriggerMode.POWER_BUTTON -> "Press power button 3 times rapidly"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -216,7 +216,7 @@ fun SosEmergencyCard(
                     }
                 }
 
-                if (currentMode == SosTriggerMode.SHAKE) {
+                if (SosTriggerMode.SHAKE in activeModes) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Shake sensitivity: ${"%.1f".format(sosShakeSensitivity)}x",
@@ -235,7 +235,7 @@ fun SosEmergencyCard(
                     )
                 }
 
-                if (currentMode == SosTriggerMode.TAP_PATTERN) {
+                if (SosTriggerMode.TAP_PATTERN in activeModes) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Required taps: $sosTapCount",

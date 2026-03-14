@@ -177,7 +177,7 @@ data class SettingsState(
     val sosPeriodicUpdates: Boolean = false,
     val sosUpdateIntervalSeconds: Int = 120,
     val sosContactCount: Int = 0,
-    val sosTriggerMode: String = "manual",
+    val sosTriggerModes: Set<String> = emptySet(),
     val sosShakeSensitivity: Float = 2.5f,
     val sosTapCount: Int = 3,
 )
@@ -475,7 +475,7 @@ class SettingsViewModel
                             sosPeriodicUpdates = _state.value.sosPeriodicUpdates,
                             sosUpdateIntervalSeconds = _state.value.sosUpdateIntervalSeconds,
                             sosContactCount = _state.value.sosContactCount,
-                            sosTriggerMode = _state.value.sosTriggerMode,
+                            sosTriggerModes = _state.value.sosTriggerModes,
                             sosShakeSensitivity = _state.value.sosShakeSensitivity,
                             sosTapCount = _state.value.sosTapCount,
                         )
@@ -2104,8 +2104,8 @@ class SettingsViewModel
                 }
             }
             viewModelScope.launch {
-                settingsRepository.sosTriggerMode.collect { mode ->
-                    _state.update { it.copy(sosTriggerMode = mode) }
+                settingsRepository.sosTriggerModes.collect { modes ->
+                    _state.update { it.copy(sosTriggerModes = modes) }
                 }
             }
             viewModelScope.launch {
@@ -2156,8 +2156,12 @@ class SettingsViewModel
             viewModelScope.launch { settingsRepository.setSosUpdateIntervalSeconds(seconds) }
         }
 
-        fun setSosTriggerMode(mode: String) {
-            viewModelScope.launch { settingsRepository.setSosTriggerMode(mode) }
+        fun toggleSosTriggerMode(mode: String) {
+            viewModelScope.launch {
+                val current = _state.value.sosTriggerModes
+                val updated = if (mode in current) current - mode else current + mode
+                settingsRepository.setSosTriggerModes(updated)
+            }
         }
 
         fun setSosShakeSensitivity(sensitivity: Float) {

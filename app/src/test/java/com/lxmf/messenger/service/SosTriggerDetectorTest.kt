@@ -11,6 +11,7 @@ import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -83,7 +84,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `single tap does not trigger SOS`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         simulateTap(startTime = 10_000L)
@@ -93,7 +94,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `two taps do not trigger when three required`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         simulateNTaps(count = 2)
@@ -103,7 +104,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `three taps within window triggers SOS`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         simulateNTaps(count = 3)
@@ -113,7 +114,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `five taps triggers SOS when required count is 5`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 5
 
         simulateNTaps(count = 5)
@@ -123,7 +124,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `four taps do not trigger when five required`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 5
 
         simulateNTaps(count = 4)
@@ -133,7 +134,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `taps outside 2500ms window do not accumulate`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         // Two taps at the beginning
@@ -149,7 +150,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `long spike is rejected as walking step`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         val t = 10_000L
@@ -170,7 +171,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `taps too close together are deduplicated`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         val t = 10_000L
@@ -191,7 +192,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `cooldown prevents re-trigger after tap pattern`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         // First trigger
@@ -207,7 +208,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `tap works again after cooldown expires`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         // First trigger
@@ -222,7 +223,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `below-threshold acceleration does not register as tap`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         val t = 10_000L
@@ -237,7 +238,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `resetTapState clears all tap state`() {
-        detector.currentMode = SosTriggerMode.TAP_PATTERN
+        detector.activeModes = setOf(SosTriggerMode.TAP_PATTERN)
         detector.requiredTapCount = 3
 
         // Register 2 taps
@@ -259,7 +260,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `brief shake below duration does not trigger`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f // ~24.5 m/s²
@@ -277,7 +278,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `sustained shake triggers SOS`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -294,7 +295,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `shake below threshold does not trigger`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -310,7 +311,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `shake outside 1000ms window resets`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -332,7 +333,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `gap in shake resets state`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -358,7 +359,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `shake cooldown prevents re-trigger`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -382,7 +383,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `shake works again after cooldown expires`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -405,7 +406,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `higher sensitivity requires less acceleration`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 1.0f // Low sensitivity → lower threshold
 
         val threshold = 1.0f * 9.81f // ~9.81 m/s²
@@ -421,7 +422,7 @@ class SosTriggerDetectorTest {
 
     @Test
     fun `resetShakeState clears shake tracking`() {
-        detector.currentMode = SosTriggerMode.SHAKE
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
 
         val threshold = 2.5f * 9.81f
@@ -447,14 +448,63 @@ class SosTriggerDetectorTest {
     // ========== SosTriggerMode Enum Tests ==========
 
     @Test
-    fun `fromKey returns MANUAL for unknown key`() {
-        assertEquals(SosTriggerMode.MANUAL, SosTriggerMode.fromKey("unknown"))
+    fun `fromKey returns null for unknown key`() {
+        assertNull(SosTriggerMode.fromKey("unknown"))
     }
 
     @Test
     fun `fromKey returns correct mode for each key`() {
-        assertEquals(SosTriggerMode.MANUAL, SosTriggerMode.fromKey("manual"))
         assertEquals(SosTriggerMode.SHAKE, SosTriggerMode.fromKey("shake"))
         assertEquals(SosTriggerMode.TAP_PATTERN, SosTriggerMode.fromKey("tap_pattern"))
+        assertEquals(SosTriggerMode.POWER_BUTTON, SosTriggerMode.fromKey("power_button"))
+    }
+
+    @Test
+    fun `fromKeys converts set of key strings to modes`() {
+        val modes = SosTriggerMode.fromKeys(setOf("shake", "power_button"))
+        assertEquals(setOf(SosTriggerMode.SHAKE, SosTriggerMode.POWER_BUTTON), modes)
+    }
+
+    @Test
+    fun `fromKeys ignores unknown keys`() {
+        val modes = SosTriggerMode.fromKeys(setOf("shake", "unknown"))
+        assertEquals(setOf(SosTriggerMode.SHAKE), modes)
+    }
+
+    // ========== Power Button Tests ==========
+
+    @Test
+    fun `handlePowerPress triggers SOS after 3 rapid presses`() {
+        detector.activeModes = setOf(SosTriggerMode.POWER_BUTTON)
+        val t = 10_000L
+
+        detector.handlePowerPress(t)
+        detector.handlePowerPress(t + 500L)
+        detector.handlePowerPress(t + 1000L)
+
+        verify(exactly = 1) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `handlePowerPress does not trigger with only 2 presses`() {
+        detector.activeModes = setOf(SosTriggerMode.POWER_BUTTON)
+        val t = 10_000L
+
+        detector.handlePowerPress(t)
+        detector.handlePowerPress(t + 500L)
+
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
+    fun `handlePowerPress does not trigger if presses are too spread out`() {
+        detector.activeModes = setOf(SosTriggerMode.POWER_BUTTON)
+        val t = 10_000L
+
+        detector.handlePowerPress(t)
+        detector.handlePowerPress(t + 1500L)
+        detector.handlePowerPress(t + 3000L) // first press expired from window
+
+        verify(exactly = 0) { sosManager.trigger() }
     }
 }

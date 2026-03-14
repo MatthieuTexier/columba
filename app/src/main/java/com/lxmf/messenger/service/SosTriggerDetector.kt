@@ -1,6 +1,9 @@
 package com.lxmf.messenger.service
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -25,14 +28,17 @@ import kotlin.math.sqrt
  * Trigger mode for SOS activation.
  */
 enum class SosTriggerMode(val key: String) {
-    MANUAL("manual"),
     SHAKE("shake"),
     TAP_PATTERN("tap_pattern"),
+    POWER_BUTTON("power_button"),
     ;
 
     companion object {
-        fun fromKey(key: String): SosTriggerMode =
-            entries.find { it.key == key } ?: MANUAL
+        fun fromKey(key: String): SosTriggerMode? =
+            entries.find { it.key == key }
+
+        fun fromKeys(keys: Set<String>): Set<SosTriggerMode> =
+            keys.mapNotNull { fromKey(it) }.toSet()
     }
 }
 
@@ -76,6 +82,11 @@ class SosTriggerDetector
             private const val TAP_WINDOW_MS = 2_500L     // sliding window to accumulate taps
             private const val TAP_MIN_INTERVAL_MS = 150L // min time between two registered taps
             private const val TAP_COOLDOWN_MS = 5_000L
+
+            // Power button detection constants
+            private const val POWER_PRESS_COUNT = 3
+            private const val POWER_PRESS_WINDOW_MS = 2_000L
+            private const val POWER_COOLDOWN_MS = 5_000L
         }
 
         private val sensorManager by lazy {
@@ -84,10 +95,11 @@ class SosTriggerDetector
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-        private var isListening = false
+        private var isSensorListening = false
+        private var isPowerButtonListening = false
 
-        /** Override in tests to set mode directly without sensor registration. */
-        internal var currentMode: SosTriggerMode = SosTriggerMode.MANUAL
+        /** Active trigger modes. Override in tests. */
+        internal var activeModes: Set<SosTriggerMode> = emptySet()
 
         /** Override in tests to control shake sensitivity. */
         internal var shakeSensitivity = 2.5f
@@ -109,15 +121,27 @@ class SosTriggerDetector
         private var inTapSpike = false
         private var tapSpikeStartTime = 0L
 
+        // Power button state
+        private val powerPressTimestamps = mutableListOf<Long>()
+        private var lastPowerTriggerTime = 0L
+
+        private val powerButtonReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == Intent.ACTION_SCREEN_OFF ||
+                    intent.action == Intent.ACTION_SCREEN_ON
+                ) {
+                    handlePowerPress(System.currentTimeMillis())
+                }
+            }
+        }
+
         /**
          * Start listening for trigger gestures. Reads current settings and
-         * registers the accelerometer listener if the trigger mode is not MANUAL.
+         * registers appropriate listeners based on active modes.
          */
         fun start() {
-            if (isListening) return
-
             settingsJob = scope.launch {
-                currentMode = SosTriggerMode.fromKey(settingsRepository.sosTriggerMode.first())
+                activeModes = SosTriggerMode.fromKeys(settingsRepository.sosTriggerModes.first())
                 shakeSensitivity = settingsRepository.sosShakeSensitivity.first()
                 requiredTapCount = settingsRepository.sosTapCount.first()
             }
@@ -125,45 +149,67 @@ class SosTriggerDetector
             // Wait for settings to load before deciding whether to register
             runBlocking { settingsJob?.join() }
 
-            if (currentMode == SosTriggerMode.MANUAL) {
-                Log.d(TAG, "Trigger mode is MANUAL, not registering sensor")
+            if (activeModes.isEmpty()) {
+                Log.d(TAG, "No trigger modes active, not registering listeners")
                 return
             }
 
-            val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-            if (accelerometer == null) {
-                Log.w(TAG, "No accelerometer available on this device")
-                return
+            // Register accelerometer if shake or tap is active
+            val needsSensor = activeModes.any {
+                it == SosTriggerMode.SHAKE || it == SosTriggerMode.TAP_PATTERN
+            }
+            if (needsSensor && !isSensorListening) {
+                val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+                if (accelerometer == null) {
+                    Log.w(TAG, "No accelerometer available on this device")
+                } else {
+                    sensorManager.registerListener(
+                        this,
+                        accelerometer,
+                        SensorManager.SENSOR_DELAY_GAME,
+                    )
+                    isSensorListening = true
+                }
             }
 
-            // SENSOR_DELAY_GAME (~20ms) needed for tap detection: brief taps last only 20-50ms
-            // and SENSOR_DELAY_UI (~60ms) misses peaks between samples.
-            sensorManager.registerListener(
-                this,
-                accelerometer,
-                SensorManager.SENSOR_DELAY_GAME,
-            )
-            isListening = true
-            Log.d(TAG, "Started listening for trigger mode: ${currentMode.key}")
+            // Register power button receiver
+            if (SosTriggerMode.POWER_BUTTON in activeModes && !isPowerButtonListening) {
+                val filter = IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_SCREEN_ON)
+                }
+                context.registerReceiver(powerButtonReceiver, filter)
+                isPowerButtonListening = true
+            }
+
+            Log.d(TAG, "Started listening for trigger modes: ${activeModes.map { it.key }}")
         }
 
         /**
-         * Stop listening for trigger gestures. Unregisters the sensor listener.
+         * Stop listening for trigger gestures. Unregisters all listeners.
          */
         fun stop() {
-            if (!isListening) return
-            sensorManager.unregisterListener(this)
-            isListening = false
+            if (isSensorListening) {
+                sensorManager.unregisterListener(this)
+                isSensorListening = false
+            }
+            if (isPowerButtonListening) {
+                try {
+                    context.unregisterReceiver(powerButtonReceiver)
+                } catch (_: IllegalArgumentException) { /* already unregistered */ }
+                isPowerButtonListening = false
+            }
             resetShakeState()
             resetTapState()
+            powerPressTimestamps.clear()
             settingsJob?.cancel()
             settingsJob = null
             Log.d(TAG, "Stopped listening")
         }
 
         /**
-         * Reload settings (e.g., when user changes trigger mode or sensitivity).
-         * Restarts the listener if needed.
+         * Reload settings (e.g., when user changes trigger modes or sensitivity).
+         * Restarts listeners if needed.
          */
         fun reloadSettings() {
             stop()
@@ -187,17 +233,16 @@ class SosTriggerDetector
             scope.launch {
                 combine(
                     settingsRepository.sosEnabled,
-                    settingsRepository.sosTriggerMode,
+                    settingsRepository.sosTriggerModes,
                     settingsRepository.sosShakeSensitivity,
                     settingsRepository.sosTapCount,
                     sosManager.state,
-                ) { enabled, mode, _, _, sosState ->
-                    Triple(enabled, mode, sosState !is SosState.Idle)
+                ) { enabled, modes, _, _, sosState ->
+                    Triple(enabled, modes, sosState !is SosState.Idle)
                 }
                     .distinctUntilChanged()
-                    .collect { (enabled, mode, sosActive) ->
-                        val triggerNeeded = enabled &&
-                            SosTriggerMode.fromKey(mode) != SosTriggerMode.MANUAL
+                    .collect { (enabled, modes, sosActive) ->
+                        val triggerNeeded = enabled && modes.isNotEmpty()
 
                         // Auto-deactivate SOS when the feature is disabled
                         if (!enabled && sosActive) {
@@ -232,11 +277,8 @@ class SosTriggerDetector
 
             val now = System.currentTimeMillis()
 
-            when (currentMode) {
-                SosTriggerMode.SHAKE -> handleShake(netAcceleration, now)
-                SosTriggerMode.TAP_PATTERN -> handleTap(netAcceleration, now)
-                SosTriggerMode.MANUAL -> { /* should not happen */ }
-            }
+            if (SosTriggerMode.SHAKE in activeModes) handleShake(netAcceleration, now)
+            if (SosTriggerMode.TAP_PATTERN in activeModes) handleTap(netAcceleration, now)
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -325,6 +367,26 @@ class SosTriggerDetector
                         }
                     }
                 }
+            }
+        }
+
+        /**
+         * Power button detection: counts SCREEN_OFF events (power button presses).
+         * Triggers SOS when [POWER_PRESS_COUNT] presses are detected within [POWER_PRESS_WINDOW_MS].
+         */
+        internal fun handlePowerPress(now: Long) {
+            if (now - lastPowerTriggerTime < POWER_COOLDOWN_MS) return
+
+            powerPressTimestamps.add(now)
+            powerPressTimestamps.removeAll { now - it > POWER_PRESS_WINDOW_MS }
+
+            Log.d(TAG, "Power press registered, count=${powerPressTimestamps.size}/$POWER_PRESS_COUNT")
+
+            if (powerPressTimestamps.size >= POWER_PRESS_COUNT) {
+                Log.d(TAG, "Power button pattern detected! Triggering SOS")
+                lastPowerTriggerTime = now
+                powerPressTimestamps.clear()
+                sosManager.trigger()
             }
         }
 
