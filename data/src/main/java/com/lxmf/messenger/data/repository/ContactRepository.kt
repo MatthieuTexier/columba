@@ -1,5 +1,6 @@
 package com.lxmf.messenger.data.repository
 
+import android.util.Log
 import com.lxmf.messenger.data.db.dao.AnnounceDao
 import com.lxmf.messenger.data.db.dao.ContactDao
 import com.lxmf.messenger.data.db.dao.LocalIdentityDao
@@ -704,6 +705,7 @@ class ContactRepository
                         .filter { it.isNotEmpty() }
                         .toMutableList()
                 } catch (e: Exception) {
+                    Log.w("ContactRepository", "Failed to parse tags: $currentTags", e)
                     mutableListOf()
                 }
             }
