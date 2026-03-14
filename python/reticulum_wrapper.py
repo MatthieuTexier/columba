@@ -86,6 +86,7 @@ COMMAND_TELEMETRY_REQUEST = 0x01  # Request telemetry from collector
 # Sensor IDs (from Sideband sense.py)
 SID_TIME = 0x01
 SID_LOCATION = 0x02
+SID_BATTERY = 0x04
 
 
 # ============================================================================
@@ -194,7 +195,9 @@ def appearance_from_marker_symbol(symbol_key: str) -> Optional[list]:
 # ============================================================================
 
 def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_ms: int,
-                            altitude: float = 0.0, speed: float = 0.0, bearing: float = 0.0) -> bytes:
+                            altitude: float = 0.0, speed: float = 0.0, bearing: float = 0.0,
+                            battery_percent: int = None, battery_charging: bool = False,
+                            battery_temperature: float = 0.0) -> bytes:
     """
     Pack location data in Sideband Telemeter format for FIELD_TELEMETRY.
 
@@ -208,6 +211,9 @@ def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_m
         altitude: Altitude in meters (default 0.0)
         speed: Speed in km/h (default 0.0)
         bearing: Bearing/heading in degrees (default 0.0)
+        battery_percent: Optional battery charge level (0-100)
+        battery_charging: Whether the device is charging (default False)
+        battery_temperature: Battery temperature in Celsius (default 0.0)
 
     Returns:
         msgpack-packed bytes for FIELD_TELEMETRY
@@ -235,6 +241,10 @@ def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_m
         SID_TIME: timestamp_s,
         SID_LOCATION: location_packed,
     }
+
+    if battery_percent is not None:
+        # Sideband Battery format: [charge%, charging (bool), temperature_celsius]
+        telemetry[SID_BATTERY] = [battery_percent, battery_charging, battery_temperature]
 
     return umsgpack.packb(telemetry)
 
@@ -281,7 +291,7 @@ def unpack_location_telemetry(packed_data: bytes) -> Optional[Dict]:
                   f"bear={bearing:.1f}° acc={accuracy:.1f}m "
                   f"t={last_update}")
 
-        return {
+        result = {
             "type": "location_share",
             "lat": lat,
             "lng": lon,
@@ -291,6 +301,21 @@ def unpack_location_telemetry(packed_data: bytes) -> Optional[Dict]:
             "speed": speed,
             "bearing": bearing,
         }
+
+        # Extract battery data if present (Sideband format: [charge%, charging, temp])
+        if SID_BATTERY in telemetry:
+            try:
+                bat = telemetry[SID_BATTERY]
+                if isinstance(bat, (list, tuple)) and len(bat) >= 1:
+                    result["battery_percent"] = bat[0]
+                    if len(bat) >= 2:
+                        result["battery_charging"] = bat[1]
+                    if len(bat) >= 3:
+                        result["battery_temperature"] = bat[2]
+            except Exception:
+                pass
+
+        return result
     except Exception as e:
         log_warning("TelemetryHelper", "unpack_location_telemetry",
                    f"Failed to unpack telemetry: {e}")
@@ -4375,7 +4400,8 @@ class ReticulumWrapper:
                                        image_data_path: str = None,
                                        file_attachments: list = None, file_attachment_paths: list = None,
                                        reply_to_message_id: str = None,
-                                       icon_name: str = None, icon_fg_color: str = None, icon_bg_color: str = None) -> Dict:
+                                       icon_name: str = None, icon_fg_color: str = None, icon_bg_color: str = None,
+                                       telemetry_json: str = None) -> Dict:
         """
         Send an LXMF message with explicit delivery method.
 
@@ -4616,6 +4642,34 @@ class ReticulumWrapper:
                 ]
                 log_info("ReticulumWrapper", "send_lxmf_message_with_method",
                         f"📎 Adding icon appearance: {icon_name}, fg={icon_fg_color} ({fg_bytes.hex()}), bg={icon_bg_color} ({bg_bytes.hex()})")
+
+            # Add FIELD_TELEMETRY from JSON if provided (SOS messages with location + battery)
+            if telemetry_json:
+                try:
+                    import json
+                    tel = json.loads(str(telemetry_json))
+                    packed = pack_location_telemetry(
+                        lat=tel.get("lat", 0.0),
+                        lon=tel.get("lng", 0.0),
+                        accuracy=tel.get("acc", 0.0),
+                        timestamp_ms=tel.get("ts", 0),
+                        altitude=tel.get("altitude", 0.0),
+                        speed=tel.get("speed", 0.0),
+                        bearing=tel.get("bearing", 0.0),
+                        battery_percent=tel.get("battery_percent"),
+                        battery_charging=tel.get("battery_charging", False),
+                        battery_temperature=tel.get("battery_temperature", 0.0),
+                    )
+                    if fields is None:
+                        fields = {}
+                    # Attach as unpacked dict (LXMF packs fields automatically via msgpack)
+                    fields[FIELD_TELEMETRY] = umsgpack.unpackb(packed)
+                    log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                            f"📡 Adding FIELD_TELEMETRY: lat={tel.get('lat')}, lng={tel.get('lng')}, "
+                            f"battery={tel.get('battery_percent')}%")
+                except Exception as e:
+                    log_warning("ReticulumWrapper", "send_lxmf_message_with_method",
+                               f"Failed to pack telemetry from JSON: {e}")
 
             # Create LXMF message with specified delivery method
             lxmf_message = LXMF.LXMessage(

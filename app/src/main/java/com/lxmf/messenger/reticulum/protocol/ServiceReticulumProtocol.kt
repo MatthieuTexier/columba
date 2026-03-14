@@ -2230,6 +2230,7 @@ class ServiceReticulumProtocol(
         fileAttachments: List<Pair<String, ByteArray>>?,
         replyToMessageId: String?,
         iconAppearance: IconAppearance?,
+        telemetryJson: String?,
     ): Result<MessageReceipt> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -2296,6 +2297,7 @@ class ServiceReticulumProtocol(
                         iconAppearance?.iconName,
                         iconAppearance?.foregroundColor,
                         iconAppearance?.backgroundColor,
+                        telemetryJson,
                     )
                 val result = JSONObject(resultJson)
 

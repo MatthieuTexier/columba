@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
@@ -239,6 +240,7 @@ fun ChatsScreen(
                         val hapticFeedback = LocalHapticFeedback.current
                         var showMenu by remember { mutableStateOf(false) }
                         val isSaved by viewModel.isContactSaved(conversation.peerHash).collectAsState()
+                        val isSos by viewModel.isSosContact(conversation.peerHash).collectAsState()
                         var contactLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
                         // Fetch contact location when menu opens; clear on close
@@ -289,6 +291,7 @@ fun ChatsScreen(
                                 expanded = showMenu,
                                 onDismiss = { showMenu = false },
                                 isSaved = isSaved,
+                                isSos = isSos,
                                 onSaveToContacts = {
                                     viewModel.saveToContacts(conversation)
                                     showMenu = false
@@ -317,6 +320,10 @@ fun ChatsScreen(
                                 onLocateOnMap = {
                                     showMenu = false
                                     onLocateOnMap(conversation.peerHash)
+                                },
+                                onToggleSos = {
+                                    viewModel.toggleSosTag(conversation.peerHash)
+                                    showMenu = false
                                 },
                                 onBlockUser = {
                                     showMenu = false
@@ -596,6 +603,7 @@ fun ConversationContextMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     isSaved: Boolean,
+    isSos: Boolean = false,
     onSaveToContacts: () -> Unit,
     onRemoveFromContacts: () -> Unit,
     onMarkAsUnread: () -> Unit,
@@ -603,6 +611,7 @@ fun ConversationContextMenu(
     onViewDetails: () -> Unit,
     hasLocation: Boolean = false,
     onLocateOnMap: () -> Unit = {},
+    onToggleSos: () -> Unit = {},
     onBlockUser: () -> Unit,
 ) {
     DropdownMenu(
@@ -677,6 +686,23 @@ fun ConversationContextMenu(
                     Text(stringResource(R.string.locate_on_map))
                 },
                 onClick = onLocateOnMap,
+            )
+        }
+
+        // SOS toggle (only shown if contact is saved)
+        if (isSaved) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = if (isSos) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    )
+                },
+                text = {
+                    Text(if (isSos) "Unmark as SOS Contact" else "Mark as SOS Contact")
+                },
+                onClick = onToggleSos,
             )
         }
 

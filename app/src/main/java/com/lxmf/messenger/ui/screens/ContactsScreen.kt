@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Info
@@ -522,6 +523,7 @@ fun ContactsScreen(
                                         },
                                         onLocateOnMap = { onLocateOnMap(relay.destinationHash) },
                                         getContactLocation = { viewModel.getContactLocation(it) },
+                                        onToggleSos = { viewModel.toggleSosTag(relay.destinationHash) },
                                     )
                                 }
                             }
@@ -572,6 +574,7 @@ fun ContactsScreen(
                                         onRemove = { viewModel.deleteContact(contact.destinationHash) },
                                         onLocateOnMap = { onLocateOnMap(contact.destinationHash) },
                                         getContactLocation = { viewModel.getContactLocation(it) },
+                                        onToggleSos = { viewModel.toggleSosTag(contact.destinationHash) },
                                     )
                                 }
                             }
@@ -624,6 +627,7 @@ fun ContactsScreen(
                                         onRemove = { viewModel.deleteContact(contact.destinationHash) },
                                         onLocateOnMap = { onLocateOnMap(contact.destinationHash) },
                                         getContactLocation = { viewModel.getContactLocation(it) },
+                                        onToggleSos = { viewModel.toggleSosTag(contact.destinationHash) },
                                     )
                                 }
                             }
@@ -856,7 +860,7 @@ fun ContactsScreen(
                 editNicknameCurrentValue = null
             },
             onConfirm = { newNickname ->
-                viewModel.updateNickname(nicknameContactHash, newNickname)
+                viewModel.updateContact(nicknameContactHash, nickname = newNickname)
                 showEditNicknameDialog = false
                 editNicknameContactHash = null
                 editNicknameCurrentValue = null
@@ -926,6 +930,7 @@ private fun ContactListItemWithMenu(
     onRemove: () -> Unit,
     onLocateOnMap: () -> Unit = {},
     getContactLocation: suspend (String) -> Pair<Double, Double>? = { null },
+    onToggleSos: () -> Unit = {},
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
@@ -976,6 +981,11 @@ private fun ContactListItemWithMenu(
             hasLocation = hasLocation,
             onLocateOnMap = {
                 onLocateOnMap()
+                showMenu = false
+            },
+            isSos = contact.isSosContact,
+            onToggleSos = {
+                onToggleSos()
                 showMenu = false
             },
         )
@@ -1098,6 +1108,26 @@ fun ContactListItem(
                             contentDescription = "My Relay",
                             modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.onTertiary,
+                        )
+                    }
+                }
+
+                // SOS badge overlay (Warning icon in top-start corner)
+                if (contact.isSosContact) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(20.dp)
+                                .align(Alignment.TopStart)
+                                .offset(x = (-4).dp, y = (-4).dp)
+                                .background(MaterialTheme.colorScheme.error, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = "SOS Contact",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onError,
                         )
                     }
                 }
@@ -1289,6 +1319,8 @@ fun ContactContextMenu(
     onRemove: () -> Unit,
     hasLocation: Boolean = false,
     onLocateOnMap: () -> Unit = {},
+    isSos: Boolean = false,
+    onToggleSos: () -> Unit = {},
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -1310,6 +1342,21 @@ fun ContactContextMenu(
                 Text(if (isPinned) "Unpin Contact" else "Pin Contact")
             },
             onClick = onPin,
+        )
+
+        // SOS toggle
+        DropdownMenuItem(
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = if (isSos) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(if (isSos) "Unmark as SOS Contact" else "Mark as SOS Contact")
+            },
+            onClick = onToggleSos,
         )
 
         HorizontalDivider()

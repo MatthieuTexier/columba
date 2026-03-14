@@ -625,6 +625,8 @@ class ContactsScreenTest {
                 onEditNickname = {},
                 onViewDetails = {},
                 onRemove = {},
+                isSos = false,
+                onToggleSos = {},
             )
         }
 
@@ -647,6 +649,8 @@ class ContactsScreenTest {
                 onEditNickname = {},
                 onViewDetails = {},
                 onRemove = {},
+                isSos = false,
+                onToggleSos = {},
             )
         }
 
@@ -666,6 +670,8 @@ class ContactsScreenTest {
                 onEditNickname = {},
                 onViewDetails = {},
                 onRemove = {},
+                isSos = false,
+                onToggleSos = {},
             )
         }
 
@@ -687,6 +693,8 @@ class ContactsScreenTest {
                 onEditNickname = {},
                 onViewDetails = {},
                 onRemove = {},
+                isSos = false,
+                onToggleSos = {},
             )
         }
 
@@ -710,6 +718,8 @@ class ContactsScreenTest {
                 onEditNickname = { editCalled = true },
                 onViewDetails = {},
                 onRemove = {},
+                isSos = false,
+                onToggleSos = {},
             )
         }
 
@@ -733,6 +743,8 @@ class ContactsScreenTest {
                 onEditNickname = {},
                 onViewDetails = { viewDetailsCalled = true },
                 onRemove = {},
+                isSos = false,
+                onToggleSos = {},
             )
         }
 
@@ -756,6 +768,8 @@ class ContactsScreenTest {
                 onEditNickname = {},
                 onViewDetails = {},
                 onRemove = { removeCalled = true },
+                isSos = false,
+                onToggleSos = {},
             )
         }
 

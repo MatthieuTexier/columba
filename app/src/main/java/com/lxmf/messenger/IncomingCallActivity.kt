@@ -76,6 +76,14 @@ class IncomingCallActivity : ComponentActivity() {
             return
         }
 
+        // SOS silent auto-answer: if SOS is active and setting is enabled, answer immediately
+        val app = applicationContext as? ColumbaApplication
+        if (app?.sosManager?.shouldAutoAnswer() == true) {
+            Log.i(TAG, "SOS silent auto-answer: answering call automatically")
+            answerCall()
+            return
+        }
+
         // Show over lock screen and turn screen on
         configureWindowForIncomingCall()
 

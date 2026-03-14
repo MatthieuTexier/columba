@@ -280,16 +280,27 @@ class MessageCollector
                                     false
                                 }
 
-                            // Show notification for received message
+                            // Show notification - SOS messages get urgent treatment
                             try {
-                                notificationHelper.notifyMessageReceived(
-                                    destinationHash = sourceHash,
-                                    peerName = peerName,
-                                    // Truncate preview
-                                    messagePreview = receivedMessage.content.take(100),
-                                    isFavorite = isFavorite,
-                                )
-                                Log.d(TAG, "Posted notification for message (favorite: $isFavorite)")
+                                if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                    val location = notificationHelper.parseSosLocation(receivedMessage.content)
+                                    notificationHelper.notifySosReceived(
+                                        destinationHash = sourceHash,
+                                        peerName = peerName,
+                                        messageContent = receivedMessage.content,
+                                        latitude = location?.first,
+                                        longitude = location?.second,
+                                    )
+                                    Log.d(TAG, "Posted SOS notification for message from ${sourceHash.take(16)}")
+                                } else {
+                                    notificationHelper.notifyMessageReceived(
+                                        destinationHash = sourceHash,
+                                        peerName = peerName,
+                                        messagePreview = receivedMessage.content.take(100),
+                                        isFavorite = isFavorite,
+                                    )
+                                    Log.d(TAG, "Posted notification for message (favorite: $isFavorite)")
+                                }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to post message notification", e)
                             }
