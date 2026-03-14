@@ -95,6 +95,7 @@ import com.lxmf.messenger.ui.screens.MessageDetailScreen
 import com.lxmf.messenger.ui.screens.MessagingScreen
 import com.lxmf.messenger.ui.screens.MigrationScreen
 import com.lxmf.messenger.ui.screens.MyIdentityScreen
+import com.lxmf.messenger.ui.screens.NomadNetBrowserScreen
 import com.lxmf.messenger.ui.screens.NotificationSettingsScreen
 import com.lxmf.messenger.ui.screens.QrScannerScreen
 import com.lxmf.messenger.ui.screens.SettingsScreen
@@ -537,6 +538,12 @@ sealed class PendingNavigation {
         val longitude: Double,
         val label: String,
     ) : PendingNavigation()
+
+    /** Navigate to NomadNet browser with a specific node and path */
+    data class NomadNetBrowser(
+        val nodeHash: String,
+        val path: String,
+    ) : PendingNavigation()
 }
 
 sealed class Screen(
@@ -822,6 +829,11 @@ fun ColumbaNavigation(
                         )
                         Log.d("ColumbaNavigation", "Navigated to map for SOS: ${navigation.label}")
                     }
+                    is PendingNavigation.NomadNetBrowser -> {
+                        val encoded = Uri.encode(navigation.path)
+                        navController.navigate("nomadnet_browser/${navigation.nodeHash}?path=$encoded")
+                        Log.d("ColumbaNavigation", "Navigated to NomadNet browser: ${navigation.nodeHash}")
+                    }
                 }
                 // Only clear on success so a failed navigation can be retried
                 pendingNavigation.value = null
@@ -978,6 +990,7 @@ fun ColumbaNavigation(
             "voice_call/",
             "incoming_call/",
             "interface_stats/",
+            "nomadnet_browser/",
         )
     val shouldShowBottomNav =
         currentRoute != null &&
@@ -1973,6 +1986,9 @@ fun ColumbaNavigation(
                             onViewAnnounce = { destHash ->
                                 navController.navigate("announce_detail/$destHash")
                             },
+                            onBrowseNode = { destHash ->
+                                navController.navigate("nomadnet_browser/$destHash")
+                            },
                         )
                     }
 
@@ -2032,6 +2048,32 @@ fun ColumbaNavigation(
                             onEndCall = exitCallFlow,
                             autoAnswer = autoAnswer,
                             profileCode = profileCode,
+                        )
+                    }
+
+                    // NomadNet Browser screen
+                    composable(
+                        route = "nomadnet_browser/{destinationHash}?path={path}",
+                        arguments =
+                            listOf(
+                                navArgument("destinationHash") { type = NavType.StringType },
+                                navArgument("path") {
+                                    type = NavType.StringType
+                                    defaultValue = "/page/index.mu"
+                                },
+                            ),
+                    ) { backStackEntry ->
+                        val destHash = backStackEntry.arguments?.getString("destinationHash").orEmpty()
+                        val path = backStackEntry.arguments?.getString("path") ?: "/page/index.mu"
+                        NomadNetBrowserScreen(
+                            destinationHash = destHash,
+                            initialPath = path,
+                            onBackClick = { navController.popBackStack() },
+                            onOpenConversation = { conversationHash ->
+                                val encodedHash = Uri.encode(conversationHash)
+                                val encodedName = Uri.encode(conversationHash.take(12))
+                                navController.navigate("messaging/$encodedHash/$encodedName")
+                            },
                         )
                     }
 
