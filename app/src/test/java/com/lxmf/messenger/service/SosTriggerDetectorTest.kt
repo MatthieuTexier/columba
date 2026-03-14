@@ -89,6 +89,7 @@ class SosTriggerDetectorTest {
 
         simulateTap(startTime = 10_000L)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -99,6 +100,7 @@ class SosTriggerDetectorTest {
 
         simulateNTaps(count = 2)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -109,6 +111,7 @@ class SosTriggerDetectorTest {
 
         simulateNTaps(count = 3)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -119,6 +122,7 @@ class SosTriggerDetectorTest {
 
         simulateNTaps(count = 5)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -129,6 +133,7 @@ class SosTriggerDetectorTest {
 
         simulateNTaps(count = 4)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -145,6 +150,7 @@ class SosTriggerDetectorTest {
         simulateTap(startTime = 13_000L)
 
         // Only 1 tap in window (the third one), first two expired
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -166,6 +172,7 @@ class SosTriggerDetectorTest {
             detector.handleTap(1.0f, start + 150)
         }
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -187,6 +194,7 @@ class SosTriggerDetectorTest {
 
         // Only 3 registered: t+50 (first falling edge), t+250 (third falling edge, 200ms gap from first), t+450
         // That should be enough
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -197,12 +205,14 @@ class SosTriggerDetectorTest {
 
         // First trigger
         val t1End = simulateNTaps(count = 3, startTime = 10_000L)
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
 
         // Attempt to trigger again within cooldown (5000ms)
         simulateNTaps(count = 3, startTime = t1End + 1_000L)
 
         // Still only 1 trigger
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -213,11 +223,13 @@ class SosTriggerDetectorTest {
 
         // First trigger
         simulateNTaps(count = 3, startTime = 10_000L)
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
 
         // After cooldown (>5000ms from last trigger)
         simulateNTaps(count = 3, startTime = 20_000L)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 2) { sosManager.trigger() }
     }
 
@@ -233,6 +245,7 @@ class SosTriggerDetectorTest {
             detector.handleTap(1.0f, t + i * 300L + 50)
         }
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -243,6 +256,7 @@ class SosTriggerDetectorTest {
 
         // Register 2 taps
         simulateNTaps(count = 2, startTime = 10_000L)
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
 
         // Reset mid-sequence
@@ -250,9 +264,11 @@ class SosTriggerDetectorTest {
 
         // Need 3 more taps from scratch
         simulateNTaps(count = 2, startTime = 11_000L)
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
 
         simulateNTaps(count = 3, startTime = 12_000L)
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -273,6 +289,7 @@ class SosTriggerDetectorTest {
         // Drop below threshold
         detector.handleShake(1.0f, t + 201)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -290,6 +307,7 @@ class SosTriggerDetectorTest {
             detector.handleShake(threshold + 5f, t + i * 100L)
         }
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -306,6 +324,7 @@ class SosTriggerDetectorTest {
             detector.handleShake(threshold - 5f, t + i * 100L)
         }
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -328,6 +347,7 @@ class SosTriggerDetectorTest {
         detector.handleShake(threshold + 5f, t + 1_300)
 
         // Not enough accumulated time in new window
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -354,6 +374,7 @@ class SosTriggerDetectorTest {
         detector.handleShake(threshold + 5f, t + 900)
 
         // Not enough continuous time since reset
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -369,6 +390,7 @@ class SosTriggerDetectorTest {
         for (i in 0..6) {
             detector.handleShake(threshold + 5f, t + i * 100L)
         }
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
 
         // Try again within cooldown (5000ms)
@@ -378,6 +400,7 @@ class SosTriggerDetectorTest {
         }
 
         // Still only 1 trigger
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -393,6 +416,7 @@ class SosTriggerDetectorTest {
         for (i in 0..6) {
             detector.handleShake(threshold + 5f, t + i * 100L)
         }
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
 
         // After cooldown (>5000ms)
@@ -401,6 +425,7 @@ class SosTriggerDetectorTest {
             detector.handleShake(threshold + 5f, t2 + i * 100L)
         }
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 2) { sosManager.trigger() }
     }
 
@@ -417,6 +442,7 @@ class SosTriggerDetectorTest {
             detector.handleShake(threshold + 2f, t + i * 100L)
         }
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -442,6 +468,7 @@ class SosTriggerDetectorTest {
         }
 
         // Only 300ms accumulated after reset, not enough
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -482,6 +509,7 @@ class SosTriggerDetectorTest {
         detector.handlePowerPress(t + 500L)
         detector.handlePowerPress(t + 1000L)
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 1) { sosManager.trigger() }
     }
 
@@ -493,6 +521,8 @@ class SosTriggerDetectorTest {
         detector.handlePowerPress(t)
         detector.handlePowerPress(t + 500L)
 
+        // SOS should not have been triggered — state stays Idle
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 
@@ -505,6 +535,8 @@ class SosTriggerDetectorTest {
         detector.handlePowerPress(t + 1500L)
         detector.handlePowerPress(t + 3000L) // first press expired from window
 
+        // SOS should not have been triggered — state stays Idle
+        assertEquals(SosState.Idle, sosManager.state.value)
         verify(exactly = 0) { sosManager.trigger() }
     }
 }

@@ -84,7 +84,7 @@ class SosManagerTest {
 
         // NotificationHelper
         every { notificationHelper.showSosActiveNotification(any(), any()) } just Runs
-        every { notificationHelper.cancelSosActiveNotification() } just Runs
+        every { notificationHelper.cancelNotification(any()) } just Runs
 
         // Identity loading
         coEvery { reticulumProtocol.loadIdentity("default_identity") } returns Result.success(mockIdentity)
@@ -306,6 +306,8 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
         verify { notificationHelper.showSosActiveNotification(any(), any()) }
     }
 
@@ -382,7 +384,8 @@ class SosManagerTest {
 
         sosManager.deactivate()
 
-        verify { notificationHelper.cancelSosActiveNotification() }
+        assertEquals(SosState.Idle, sosManager.state.value)
+        verify { notificationHelper.cancelNotification(NotificationHelper.NOTIFICATION_ID_SOS) }
     }
 
     // ========== Auto-Answer Tests ==========
@@ -458,6 +461,9 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(1, (state as SosState.Active).sentCount)
         coVerify {
             reticulumProtocol.sendLxmfMessageWithMethod(
                 destinationHash = any(),
@@ -486,6 +492,9 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(1, (state as SosState.Active).sentCount)
         coVerify {
             reticulumProtocol.sendLxmfMessageWithMethod(
                 destinationHash = any(),
@@ -512,7 +521,8 @@ class SosManagerTest {
         sosManager.restoreIfActive()
         advanceUntilIdle()
 
-        assertEquals(SosState.Idle, sosManager.state.value)
+        val state = sosManager.state.value
+        assertEquals(SosState.Idle, state)
         verify(exactly = 0) { notificationHelper.showSosActiveNotification(any(), any()) }
     }
 
@@ -542,6 +552,10 @@ class SosManagerTest {
         sosManager.restoreIfActive()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(2, (state as SosState.Active).sentCount)
+        assertEquals(1, state.failedCount)
         verify { notificationHelper.showSosActiveNotification(2, 1) }
     }
 
@@ -576,6 +590,9 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(1, (state as SosState.Active).sentCount)
         coVerify { settingsRepository.persistSosActiveState(1, 0) }
     }
 
@@ -588,6 +605,7 @@ class SosManagerTest {
         sosManager.deactivate()
         advanceUntilIdle()
 
+        assertEquals(SosState.Idle, sosManager.state.value)
         coVerify { settingsRepository.clearSosActiveState() }
     }
 
@@ -615,6 +633,8 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
         coVerify { settingsRepository.persistSosActiveState(1, 1) }
     }
 
@@ -651,6 +671,9 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(1, (state as SosState.Active).sentCount)
         coVerify {
             reticulumProtocol.sendLxmfMessageWithMethod(
                 destinationHash = any(),
@@ -695,6 +718,9 @@ class SosManagerTest {
         sosManager.trigger()
         advanceUntilIdle()
 
+        val state = sosManager.state.value
+        assertTrue("Expected Active state but got $state", state is SosState.Active)
+        assertEquals(1, (state as SosState.Active).sentCount)
         coVerify {
             reticulumProtocol.sendLxmfMessageWithMethod(
                 destinationHash = any(),

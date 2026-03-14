@@ -15,6 +15,7 @@ import com.lxmf.messenger.reticulum.protocol.ServiceReticulumProtocol
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -24,7 +25,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -73,13 +73,23 @@ class SosManager
         /** Override in tests to use a test dispatcher. */
         internal var dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Default
 
-        private val scope by lazy { CoroutineScope(SupervisorJob() + dispatcher) }
+        private val scope by lazy {
+            CoroutineScope(SupervisorJob() + dispatcher).also { s ->
+                s.launch {
+                    launch { settingsRepository.sosDeactivationPin.collect { cachedDeactivationPin = it } }
+                    launch { settingsRepository.sosSilentAutoAnswer.collect { cachedSilentAutoAnswer = it } }
+                }
+            }
+        }
 
         private val _state = MutableStateFlow<SosState>(SosState.Idle)
         val state: StateFlow<SosState> = _state.asStateFlow()
 
         private var countdownJob: Job? = null
         private var periodicUpdateJob: Job? = null
+
+        @Volatile private var cachedDeactivationPin: String? = null
+        @Volatile private var cachedSilentAutoAnswer: Boolean = false
 
         /**
          * Restore persisted SOS active state after app/phone restart.
@@ -159,7 +169,7 @@ class SosManager
         fun deactivate(pin: String? = null): Boolean {
             if (_state.value !is SosState.Active) return false
 
-            val requiredPin = runBlocking { settingsRepository.sosDeactivationPin.first() }
+            val requiredPin = cachedDeactivationPin
             if (!requiredPin.isNullOrBlank() && requiredPin != pin) {
                 Log.d(TAG, "SOS deactivation PIN mismatch")
                 return false
@@ -167,7 +177,7 @@ class SosManager
 
             periodicUpdateJob?.cancel()
             periodicUpdateJob = null
-            notificationHelper.cancelSosActiveNotification()
+            notificationHelper.cancelNotification(NotificationHelper.NOTIFICATION_ID_SOS)
             _state.value = SosState.Idle
             scope.launch { settingsRepository.clearSosActiveState() }
             Log.d(TAG, "SOS deactivated")
@@ -181,7 +191,7 @@ class SosManager
          */
         fun shouldAutoAnswer(): Boolean {
             if (_state.value !is SosState.Active) return false
-            return runBlocking { settingsRepository.sosSilentAutoAnswer.first() }
+            return cachedSilentAutoAnswer
         }
 
         private suspend fun startCountdown(totalSeconds: Int) {
@@ -280,71 +290,64 @@ class SosManager
         @SuppressLint("MissingPermission")
         private fun startPeriodicUpdates() {
             periodicUpdateJob = scope.launch {
-                try {
-                    val intervalSeconds = settingsRepository.sosUpdateIntervalSeconds.first()
+                val intervalSeconds = settingsRepository.sosUpdateIntervalSeconds.first()
 
-                    // Wait for the Reticulum service to be bound and ready before
-                    // loading identity. At boot, the mesh network may not be up yet.
-                    if (reticulumProtocol is ServiceReticulumProtocol) {
+                // Wait for the Reticulum service to be bound and ready before
+                // loading identity. At boot, the mesh network may not be up yet.
+                if (reticulumProtocol is ServiceReticulumProtocol) {
+                    try {
+                        reticulumProtocol.bindService()
+                        reticulumProtocol.waitForReady(timeoutMs = 30_000)
+                    } catch (e: Exception) {
+                        ensureActive()
+                        Log.w(TAG, "Reticulum not ready yet, periodic updates will retry", e)
+                    }
+                }
+
+                var identity = loadIdentity()
+
+                while (true) {
+                    delay(intervalSeconds * 1_000L)
+
+                    // Retry identity load if it failed on first attempt (service wasn't ready)
+                    if (identity == null) {
+                        identity = loadIdentity()
+                        if (identity == null) continue
+                    }
+
+                    val updateLocation = getLastKnownLocation()
+                    val updateBattery = getBatteryLevel()
+
+                    val updateMessage = buildString {
+                        append("SOS Update")
+                        updateLocation?.let { loc ->
+                            append(" - GPS: ${loc.latitude}, ${loc.longitude}")
+                            append(" (accuracy: ${loc.accuracy.toInt()}m)")
+                        }
+                        updateBattery?.let { level ->
+                            append(" - Battery: $level%")
+                        }
+                    }
+
+                    val updateTelemetry = buildTelemetryJson(updateLocation, updateBattery)
+
+                    val contacts = contactRepository.getSosContacts()
+                    for (contact in contacts) {
                         try {
-                            reticulumProtocol.bindService()
-                            reticulumProtocol.waitForReady(timeoutMs = 30_000)
-                        } catch (e: CancellationException) {
-                            throw e
+                            val destHashBytes = contact.destinationHash.hexToByteArray()
+                            reticulumProtocol.sendLxmfMessageWithMethod(
+                                destinationHash = destHashBytes,
+                                content = updateMessage,
+                                sourceIdentity = identity,
+                                telemetryJson = updateTelemetry,
+                            )
                         } catch (e: Exception) {
-                            Log.w(TAG, "Reticulum not ready yet, periodic updates will retry", e)
+                            ensureActive()
+                            Log.e(TAG, "Error sending SOS update to ${contact.destinationHash.take(8)}...", e)
                         }
                     }
 
-                    var identity = loadIdentity()
-
-                    while (true) {
-                        delay(intervalSeconds * 1_000L)
-
-                        // Retry identity load if it failed on first attempt (service wasn't ready)
-                        if (identity == null) {
-                            identity = loadIdentity()
-                            if (identity == null) continue
-                        }
-
-                        val updateLocation = getLastKnownLocation()
-                        val updateBattery = getBatteryLevel()
-
-                        val updateMessage = buildString {
-                            append("SOS Update")
-                            updateLocation?.let { loc ->
-                                append(" - GPS: ${loc.latitude}, ${loc.longitude}")
-                                append(" (accuracy: ${loc.accuracy.toInt()}m)")
-                            }
-                            updateBattery?.let { level ->
-                                append(" - Battery: $level%")
-                            }
-                        }
-
-                        val updateTelemetry = buildTelemetryJson(updateLocation, updateBattery)
-
-                        val contacts = contactRepository.getSosContacts()
-                        for (contact in contacts) {
-                            try {
-                                val destHashBytes = contact.destinationHash.hexToByteArray()
-                                reticulumProtocol.sendLxmfMessageWithMethod(
-                                    destinationHash = destHashBytes,
-                                    content = updateMessage,
-                                    sourceIdentity = identity,
-                                    telemetryJson = updateTelemetry,
-                                )
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error sending SOS update to ${contact.destinationHash.take(8)}...", e)
-                            }
-                        }
-
-                        Log.d(TAG, "Periodic SOS update sent to ${contacts.size} contacts")
-                    }
-                } catch (e: CancellationException) {
-                    Log.d(TAG, "Periodic updates cancelled")
-                    throw e
+                    Log.d(TAG, "Periodic SOS update sent to ${contacts.size} contacts")
                 }
             }
         }
@@ -384,6 +387,7 @@ class SosManager
                 val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
                 batteryManager.isCharging
             } catch (e: Exception) {
+                Log.w(TAG, "Error checking battery charging state", e)
                 false
             }
 

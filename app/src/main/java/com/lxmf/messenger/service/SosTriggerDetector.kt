@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.sqrt
@@ -139,15 +138,10 @@ class SosTriggerDetector
          * Start listening for trigger gestures. Reads current settings and
          * registers appropriate listeners based on active modes.
          */
-        fun start() {
-            settingsJob = scope.launch {
-                activeModes = SosTriggerMode.fromKeys(settingsRepository.sosTriggerModes.first())
-                shakeSensitivity = settingsRepository.sosShakeSensitivity.first()
-                requiredTapCount = settingsRepository.sosTapCount.first()
-            }
-
-            // Wait for settings to load before deciding whether to register
-            runBlocking { settingsJob?.join() }
+        suspend fun start() {
+            activeModes = SosTriggerMode.fromKeys(settingsRepository.sosTriggerModes.first())
+            shakeSensitivity = settingsRepository.sosShakeSensitivity.first()
+            requiredTapCount = settingsRepository.sosTapCount.first()
 
             if (activeModes.isEmpty()) {
                 Log.d(TAG, "No trigger modes active, not registering listeners")
@@ -211,7 +205,7 @@ class SosTriggerDetector
          * Reload settings (e.g., when user changes trigger modes or sensitivity).
          * Restarts listeners if needed.
          */
-        fun reloadSettings() {
+        suspend fun reloadSettings() {
             stop()
             start()
         }

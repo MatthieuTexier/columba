@@ -47,12 +47,16 @@ class SosViewModelTest {
     fun `trigger delegates to manager`() {
         viewModel.trigger()
         verify { sosManager.trigger() }
+        // State remains Idle since mock trigger doesn't change state
+        assertEquals(SosState.Idle, viewModel.state.value)
     }
 
     @Test
     fun `cancel delegates to manager`() {
         viewModel.cancel()
         verify { sosManager.cancel() }
+        // State remains Idle since mock cancel doesn't change state
+        assertEquals(SosState.Idle, viewModel.state.value)
     }
 
     @Test

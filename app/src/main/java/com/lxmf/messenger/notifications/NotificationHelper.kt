@@ -46,7 +46,7 @@ class NotificationHelper
             private const val NOTIFICATION_ID_MESSAGE = 1000
             private const val NOTIFICATION_ID_ANNOUNCE = 2000
             private const val NOTIFICATION_ID_BLE = 3000
-            private const val NOTIFICATION_ID_SOS = 5000
+            internal const val NOTIFICATION_ID_SOS = 5000
 
             // Intent actions
             const val ACTION_OPEN_ANNOUNCE = "com.lxmf.messenger.ACTION_OPEN_ANNOUNCE"
@@ -419,19 +419,16 @@ class NotificationHelper
         }
 
         /**
-         * Cancel a specific notification.
+         * Cancel one or all notifications.
          *
-         * @param notificationId The ID of the notification to cancel
+         * @param notificationId The ID of the notification to cancel, or null to cancel all.
          */
-        fun cancelNotification(notificationId: Int) {
-            notificationManager.cancel(notificationId)
-        }
-
-        /**
-         * Cancel all notifications.
-         */
-        fun cancelAllNotifications() {
-            notificationManager.cancelAll()
+        fun cancelNotification(notificationId: Int? = null) {
+            if (notificationId != null) {
+                notificationManager.cancel(notificationId)
+            } else {
+                notificationManager.cancelAll()
+            }
         }
 
         /**
@@ -446,35 +443,19 @@ class NotificationHelper
         ) {
             if (!hasNotificationPermission()) return
 
-            val openIntent =
-                Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    action = ACTION_OPEN_CONVERSATION
-                    putExtra(EXTRA_DESTINATION_HASH, destinationHash)
-                    putExtra(EXTRA_PEER_NAME, peerName)
-                }
-            val openPendingIntent =
-                PendingIntent.getActivity(
-                    context,
-                    "sos_open_$destinationHash".hashCode(),
-                    openIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
+            val openPendingIntent = createSosPendingIntent(
+                action = ACTION_OPEN_CONVERSATION,
+                requestCode = "sos_open_$destinationHash",
+                destinationHash = destinationHash,
+                peerName = peerName,
+            )
 
-            val callBackIntent =
-                Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    action = ACTION_SOS_CALL_BACK
-                    putExtra(EXTRA_DESTINATION_HASH, destinationHash)
-                    putExtra(EXTRA_PEER_NAME, peerName)
-                }
-            val callBackPendingIntent =
-                PendingIntent.getActivity(
-                    context,
-                    "sos_call_$destinationHash".hashCode(),
-                    callBackIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
+            val callBackPendingIntent = createSosPendingIntent(
+                action = ACTION_SOS_CALL_BACK,
+                requestCode = "sos_call_$destinationHash",
+                destinationHash = destinationHash,
+                peerName = peerName,
+            )
 
             val contentText = if (latitude != null && longitude != null) {
                 "GPS: ${"%.5f".format(latitude)}, ${"%.5f".format(longitude)}"
@@ -505,21 +486,13 @@ class NotificationHelper
                     .setVibrate(longArrayOf(0, 500, 200, 500, 200, 500))
 
             if (latitude != null && longitude != null) {
-                val mapIntent =
-                    Intent(context, MainActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        action = ACTION_SOS_VIEW_MAP
-                        putExtra(EXTRA_PEER_NAME, peerName)
-                        putExtra("latitude", latitude)
-                        putExtra("longitude", longitude)
-                    }
-                val mapPendingIntent =
-                    PendingIntent.getActivity(
-                        context,
-                        "sos_map_$destinationHash".hashCode(),
-                        mapIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    )
+                val mapPendingIntent = createSosPendingIntent(
+                    action = ACTION_SOS_VIEW_MAP,
+                    requestCode = "sos_map_$destinationHash",
+                    peerName = peerName,
+                    latitude = latitude,
+                    longitude = longitude,
+                )
                 builder.addAction(R.mipmap.ic_launcher, "View on Map", mapPendingIntent)
             }
 
@@ -530,6 +503,30 @@ class NotificationHelper
             } catch (e: SecurityException) {
                 // Permission was revoked
             }
+        }
+
+        private fun createSosPendingIntent(
+            action: String,
+            requestCode: String,
+            destinationHash: String? = null,
+            peerName: String? = null,
+            latitude: Double? = null,
+            longitude: Double? = null,
+        ): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                this.action = action
+                destinationHash?.let { putExtra(EXTRA_DESTINATION_HASH, it) }
+                peerName?.let { putExtra(EXTRA_PEER_NAME, it) }
+                latitude?.let { putExtra("latitude", it) }
+                longitude?.let { putExtra("longitude", it) }
+            }
+            return PendingIntent.getActivity(
+                context,
+                requestCode.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
         }
 
         /**
@@ -573,10 +570,6 @@ class NotificationHelper
             } catch (e: SecurityException) {
                 // Permission was revoked
             }
-        }
-
-        fun cancelSosActiveNotification() {
-            notificationManager.cancel(NOTIFICATION_ID_SOS)
         }
 
         /**

@@ -286,35 +286,29 @@ class ContactsViewModel
         }
 
         /**
-         * Update contact nickname
+         * Update contact nickname or notes.
+         *
+         * @param destinationHash The contact's destination hash
+         * @param nickname If non-null, updates the nickname (pass empty string to clear)
+         * @param notes If non-null, updates the notes (pass empty string to clear)
          */
-        fun updateNickname(
+        fun updateContact(
             destinationHash: String,
-            nickname: String?,
+            nickname: String? = null,
+            notes: String? = null,
         ) {
             viewModelScope.launch {
                 try {
-                    contactRepository.updateNickname(destinationHash, nickname)
-                    Log.d(TAG, "Updated nickname for $destinationHash")
+                    if (nickname != null) {
+                        contactRepository.updateNickname(destinationHash, nickname)
+                        Log.d(TAG, "Updated nickname for $destinationHash")
+                    }
+                    if (notes != null) {
+                        contactRepository.updateNotes(destinationHash, notes)
+                        Log.d(TAG, "Updated notes for $destinationHash")
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to update nickname for $destinationHash", e)
-                }
-            }
-        }
-
-        /**
-         * Update contact notes
-         */
-        fun updateNotes(
-            destinationHash: String,
-            notes: String?,
-        ) {
-            viewModelScope.launch {
-                try {
-                    contactRepository.updateNotes(destinationHash, notes)
-                    Log.d(TAG, "Updated notes for $destinationHash")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to update notes for $destinationHash", e)
+                    Log.e(TAG, "Failed to update contact $destinationHash", e)
                 }
             }
         }

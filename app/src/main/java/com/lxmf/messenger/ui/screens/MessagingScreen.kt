@@ -202,6 +202,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.lxmf.messenger.ui.screens.util.formatTimestamp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -2626,24 +2627,6 @@ private fun parseSosGpsLocation(content: String): Pair<Double, Double>? {
     }
 }
 
-private fun formatTimestamp(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-
-    return when {
-        diff < 60_000 -> "Just now"
-        diff < 3600_000 -> {
-            val minutes = (diff / 60_000).toInt()
-            "$minutes min ago"
-        }
-        diff < 86400_000 -> {
-            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
-        }
-        else -> {
-            SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(timestamp))
-        }
-    }
-}
 
 @Composable
 private fun FullscreenImageDialog(
@@ -2954,80 +2937,4 @@ internal fun getMessageStatusIcon(status: String): String =
         else -> ""
     }
 
-@Composable
-private fun TextSizeDialog(
-    currentScale: Float,
-    onScaleChange: (Float) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var sliderValue by remember(currentScale) { mutableStateOf(currentScale) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = Icons.Default.FormatSize,
-                contentDescription = null,
-            )
-        },
-        title = { Text("Text size") },
-        text = {
-            Column {
-                // Preview text
-                Text(
-                    text = "Preview message text",
-                    style =
-                        MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize * sliderValue,
-                        ),
-                    modifier = Modifier.padding(bottom = 16.dp),
-                )
-
-                // Scale label
-                Text(
-                    text = "${(sliderValue * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                // Slider
-                Slider(
-                    value = sliderValue,
-                    onValueChange = { sliderValue = it },
-                    valueRange = 0.7f..2.0f,
-                    steps = 12,
-                )
-
-                // Min/Max labels
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "A",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "A",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onScaleChange(sliderValue)
-                onDismiss()
-            }) {
-                Text("OK")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
-}
+// TextSizeDialog has been moved to TextSizeDialog.kt

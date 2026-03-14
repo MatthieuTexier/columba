@@ -860,7 +860,7 @@ fun ContactsScreen(
                 editNicknameCurrentValue = null
             },
             onConfirm = { newNickname ->
-                viewModel.updateNickname(nicknameContactHash, newNickname)
+                viewModel.updateContact(nicknameContactHash, nickname = newNickname)
                 showEditNicknameDialog = false
                 editNicknameContactHash = null
                 editNicknameCurrentValue = null
