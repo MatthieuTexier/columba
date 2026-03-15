@@ -138,6 +138,44 @@ fun SosEmergencyCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Audio recording
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Audio Recording", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Record and send audio when SOS is triggered",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = sosAudioEnabled, onCheckedChange = onSosAudioEnabledChange)
+                }
+
+                if (sosAudioEnabled) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Recording duration: ${sosAudioDurationSeconds}s",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Audio is sent as a separate message after the initial SOS alert",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Slider(
+                        value = sosAudioDurationSeconds.toFloat(),
+                        onValueChange = { onSosAudioDurationSecondsChange(it.toInt()) },
+                        valueRange = 15f..60f,
+                        steps = 8,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 // Silent auto-answer
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -255,44 +293,6 @@ fun SosEmergencyCard(
                         onValueChange = { onSosTapCountChange(it.toInt()) },
                         valueRange = 3f..5f,
                         steps = 1,
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Audio recording
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Audio Recording", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Record and send audio when SOS is triggered",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sosAudioEnabled, onCheckedChange = onSosAudioEnabledChange)
-                }
-
-                if (sosAudioEnabled) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Recording duration: ${sosAudioDurationSeconds}s",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Audio is sent as a separate message after the initial SOS alert",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Slider(
-                        value = sosAudioDurationSeconds.toFloat(),
-                        onValueChange = { onSosAudioDurationSecondsChange(it.toInt()) },
-                        valueRange = 15f..60f,
-                        steps = 8,
                     )
                 }
 
