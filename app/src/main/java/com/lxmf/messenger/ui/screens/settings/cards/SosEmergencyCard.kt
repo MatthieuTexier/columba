@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.lxmf.messenger.service.SosTriggerMode
 import com.lxmf.messenger.ui.components.CollapsibleSettingsCard
 
+@Suppress("LongParameterList")
 @Composable
 fun SosEmergencyCard(
     isExpanded: Boolean,
@@ -77,276 +78,274 @@ fun SosEmergencyCard(
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
+            // ── Contacts ──
             Text(
-                    "$sosContactCount SOS contact(s) configured",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (sosContactCount == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                "$sosContactCount SOS contact(s) configured",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (sosContactCount == 0) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                // Message template (local state to avoid cursor reset on async DataStore roundtrip)
-                var templateText by remember { mutableStateOf(sosMessageTemplate) }
-                OutlinedTextField(
-                    value = templateText,
-                    onValueChange = {
-                        templateText = it
-                        onSosMessageTemplateChange(it)
-                    },
-                    label = { Text("Message Template") },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3,
-                )
+            // ── Triggers ──
+            Text("Triggers", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(8.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
+            // Floating button
+            SosToggleRow(
+                title = "Floating SOS Button",
+                subtitle = "Show a floating SOS trigger button",
+                checked = sosShowFloatingButton,
+                onCheckedChange = onSosShowFloatingButtonChange,
+            )
 
-                // Countdown slider
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Trigger modes (multi-select)
+            Text(
+                "Additional trigger modes",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            val activeModes = SosTriggerMode.fromKeys(sosTriggerModes)
+            SosTriggerMode.entries.forEach { mode ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = mode in activeModes,
+                        onCheckedChange = { onSosTriggerModeToggle(mode.key) },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            when (mode) {
+                                SosTriggerMode.SHAKE -> "Shake phone"
+                                SosTriggerMode.TAP_PATTERN -> "Tap pattern"
+                                SosTriggerMode.POWER_BUTTON -> "Power button"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            when (mode) {
+                                SosTriggerMode.SHAKE -> "Shake the device vigorously to trigger"
+                                SosTriggerMode.TAP_PATTERN -> "Tap the back of the phone rapidly"
+                                SosTriggerMode.POWER_BUTTON -> "Press power button 3 times rapidly"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            if (SosTriggerMode.SHAKE in activeModes) {
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Countdown: ${sosCountdownSeconds}s",
+                    "Shake sensitivity: ${"%.1f".format(sosShakeSensitivity)}x",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    if (sosCountdownSeconds == 0) "SOS will send instantly" else "Delay before sending",
+                    "Lower = more sensitive, Higher = harder shake required",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Slider(
-                    value = sosCountdownSeconds.toFloat(),
-                    onValueChange = { onSosCountdownSecondsChange(it.toInt()) },
-                    valueRange = 0f..30f,
-                    steps = 29,
+                    value = sosShakeSensitivity,
+                    onValueChange = onSosShakeSensitivityChange,
+                    valueRange = 1.0f..5.0f,
+                    steps = 7,
                 )
+            }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Include location
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Include GPS Location", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Append coordinates to SOS message",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sosIncludeLocation, onCheckedChange = onSosIncludeLocationChange)
-                }
-
+            if (SosTriggerMode.TAP_PATTERN in activeModes) {
                 Spacer(modifier = Modifier.height(8.dp))
-
-                // Audio recording
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Audio Recording", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Record and send audio when SOS is triggered",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sosAudioEnabled, onCheckedChange = onSosAudioEnabledChange)
-                }
-
-                if (sosAudioEnabled) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Recording duration: ${sosAudioDurationSeconds}s",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Audio is sent as a separate message after the initial SOS alert",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Slider(
-                        value = sosAudioDurationSeconds.toFloat(),
-                        onValueChange = { onSosAudioDurationSecondsChange(it.toInt()) },
-                        valueRange = 15f..60f,
-                        steps = 8,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Silent auto-answer
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Silent Auto-Answer", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Auto-answer incoming calls during active SOS",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sosSilentAutoAnswer, onCheckedChange = onSosSilentAutoAnswerChange)
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Floating button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Floating SOS Button", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Show a floating SOS trigger button",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sosShowFloatingButton, onCheckedChange = onSosShowFloatingButtonChange)
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Trigger modes (multi-select)
-                Text("Trigger Modes", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "How SOS can be activated (in addition to the button)",
+                    "Required taps: $sosTapCount",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Number of rapid taps needed to trigger SOS",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val activeModes = SosTriggerMode.fromKeys(sosTriggerModes)
-                SosTriggerMode.entries.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Checkbox(
-                            checked = mode in activeModes,
-                            onCheckedChange = { onSosTriggerModeToggle(mode.key) },
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                when (mode) {
-                                    SosTriggerMode.SHAKE -> "Shake phone"
-                                    SosTriggerMode.TAP_PATTERN -> "Tap pattern"
-                                    SosTriggerMode.POWER_BUTTON -> "Power button"
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                when (mode) {
-                                    SosTriggerMode.SHAKE -> "Shake the device vigorously to trigger"
-                                    SosTriggerMode.TAP_PATTERN -> "Tap the back of the phone rapidly"
-                                    SosTriggerMode.POWER_BUTTON -> "Press power button 3 times rapidly"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-
-                if (SosTriggerMode.SHAKE in activeModes) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Shake sensitivity: ${"%.1f".format(sosShakeSensitivity)}x",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Lower = more sensitive, Higher = harder shake required",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Slider(
-                        value = sosShakeSensitivity,
-                        onValueChange = onSosShakeSensitivityChange,
-                        valueRange = 1.0f..5.0f,
-                        steps = 7,
-                    )
-                }
-
-                if (SosTriggerMode.TAP_PATTERN in activeModes) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Required taps: $sosTapCount",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        "Number of rapid taps needed to trigger SOS",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Slider(
-                        value = sosTapCount.toFloat(),
-                        onValueChange = { onSosTapCountChange(it.toInt()) },
-                        valueRange = 3f..5f,
-                        steps = 1,
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Periodic updates
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Periodic Location Updates", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "Send location updates while SOS is active",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = sosPeriodicUpdates, onCheckedChange = onSosPeriodicUpdatesChange)
-                }
-
-                if (sosPeriodicUpdates) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Update interval: ${sosUpdateIntervalSeconds}s",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
-                        value = sosUpdateIntervalSeconds.toFloat(),
-                        onValueChange = { onSosUpdateIntervalSecondsChange(it.toInt()) },
-                        valueRange = 30f..600f,
-                        steps = 56,
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                // Deactivation PIN
-                var pinText by remember { mutableStateOf(sosDeactivationPin ?: "") }
-                OutlinedTextField(
-                    value = pinText,
-                    onValueChange = { newValue ->
-                        val filtered = newValue.filter { it.isDigit() }.take(6)
-                        pinText = filtered
-                        onSosDeactivationPinChange(filtered.ifBlank { null })
-                    },
-                    label = { Text("Deactivation PIN (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation(),
-                    supportingText = { Text("4-6 digit PIN required to deactivate SOS") },
-                    singleLine = true,
+                Slider(
+                    value = sosTapCount.toFloat(),
+                    onValueChange = { onSosTapCountChange(it.toInt()) },
+                    valueRange = 3f..5f,
+                    steps = 1,
                 )
+            }
+
+            // Countdown
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Countdown: ${sosCountdownSeconds}s",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                if (sosCountdownSeconds == 0) "SOS will send instantly" else "Delay before sending",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Slider(
+                value = sosCountdownSeconds.toFloat(),
+                onValueChange = { onSosCountdownSecondsChange(it.toInt()) },
+                valueRange = 0f..30f,
+                steps = 29,
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // ── Signals ──
+            Text("Signals", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Message template (local state to avoid cursor reset on async DataStore roundtrip)
+            var templateText by remember { mutableStateOf(sosMessageTemplate) }
+            OutlinedTextField(
+                value = templateText,
+                onValueChange = {
+                    templateText = it
+                    onSosMessageTemplateChange(it)
+                },
+                label = { Text("Message Template") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Audio recording
+            SosToggleRow(
+                title = "Audio Recording",
+                subtitle = "Record and send audio when SOS is triggered",
+                checked = sosAudioEnabled,
+                onCheckedChange = onSosAudioEnabledChange,
+            )
+
+            if (sosAudioEnabled) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Recording duration: ${sosAudioDurationSeconds}s",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Sent as a separate message after the initial alert",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = sosAudioDurationSeconds.toFloat(),
+                    onValueChange = { onSosAudioDurationSecondsChange(it.toInt()) },
+                    valueRange = 15f..60f,
+                    steps = 8,
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // ── Location ──
+            Text("Location", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Include location
+            SosToggleRow(
+                title = "Include GPS Location",
+                subtitle = "Append coordinates to SOS message",
+                checked = sosIncludeLocation,
+                onCheckedChange = onSosIncludeLocationChange,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Periodic updates
+            SosToggleRow(
+                title = "Periodic Location Updates",
+                subtitle = "Send location updates while SOS is active",
+                checked = sosPeriodicUpdates,
+                onCheckedChange = onSosPeriodicUpdatesChange,
+            )
+
+            if (sosPeriodicUpdates) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Update interval: ${sosUpdateIntervalSeconds}s",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Slider(
+                    value = sosUpdateIntervalSeconds.toFloat(),
+                    onValueChange = { onSosUpdateIntervalSecondsChange(it.toInt()) },
+                    valueRange = 30f..600f,
+                    steps = 56,
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+            // ── Security ──
+            Text("Security", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Silent auto-answer
+            SosToggleRow(
+                title = "Silent Auto-Answer",
+                subtitle = "Auto-answer incoming calls during active SOS",
+                checked = sosSilentAutoAnswer,
+                onCheckedChange = onSosSilentAutoAnswerChange,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Deactivation PIN
+            var pinText by remember { mutableStateOf(sosDeactivationPin ?: "") }
+            OutlinedTextField(
+                value = pinText,
+                onValueChange = { newValue ->
+                    val filtered = newValue.filter { it.isDigit() }.take(6)
+                    pinText = filtered
+                    onSosDeactivationPinChange(filtered.ifBlank { null })
+                },
+                label = { Text("Deactivation PIN (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation = PasswordVisualTransformation(),
+                supportingText = { Text("4-6 digit PIN required to deactivate SOS") },
+                singleLine = true,
+            )
         }
+    }
+}
+
+@Composable
+private fun SosToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
