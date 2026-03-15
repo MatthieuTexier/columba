@@ -480,6 +480,8 @@ class SettingsViewModel
                             sosTriggerModes = _state.value.sosTriggerModes,
                             sosShakeSensitivity = _state.value.sosShakeSensitivity,
                             sosTapCount = _state.value.sosTapCount,
+                            sosAudioEnabled = _state.value.sosAudioEnabled,
+                            sosAudioDurationSeconds = _state.value.sosAudioDurationSeconds,
                         )
                     }.distinctUntilChanged().collect { newState ->
                         applySettingsUpdate(newState)
