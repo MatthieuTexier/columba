@@ -29,6 +29,7 @@ Add a complete SOS Emergency feature to Columba, allowing users to send emergenc
 - Receiver-side: clickable "View on Map" button for GPS-tagged SOS messages
 - **Audio recording**: Records ambient audio (AAC/M4A, 16kHz) for configurable duration (15-60s) when SOS is triggered, sent as a separate LXMF message via `FIELD_AUDIO (0x07)`
 - **Audio playback**: Received audio messages display an inline player (play/pause + progress bar) in the chat view
+- **Breadcrumb trail**: Receiver-side map shows a red polyline connecting all GPS positions from an SOS sender chronologically, with dot markers at each point
 
 ---
 
@@ -129,6 +130,15 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 - If SOS is deactivated before recording finishes, the recording is cancelled
 - Receiver sees an inline audio player (play/pause + progress bar) in the chat view
 
+#### SOS Breadcrumb Trail (Receiver Side)
+- Each received SOS message with GPS is stored in `received_locations` table via `MessageCollector`
+- When the receiver taps "View on Map" from the SOS notification, the sender's `destinationHash` is passed through the route
+- `MapScreen` queries all stored locations for that sender via `MapViewModel.getSosTrailLocations()`
+- A red `LineLayer` polyline connects all positions chronologically (oldest → newest)
+- Red `CircleLayer` dot markers are placed at each GPS position
+- The focus marker (pink) shows the latest position
+- Trail data persists across app restarts (stored in Room DB)
+
 #### SOS Deactivation
 - If no PIN configured: simple deactivation returns to `Idle`
 - If PIN configured: user must enter correct PIN to deactivate
@@ -184,6 +194,9 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 | `app/.../ui/components/SosOverlay.kt` | Composable for SOS UI states: countdown dialog, sending dialog, active banner (placed in Scaffold `bottomBar` above NavigationBar), and deactivation dialog with optional PIN input. |
 | `app/.../ui/components/AudioMessagePlayer.kt` | Composable audio player for LXMF FIELD_AUDIO messages. Play/pause button, linear progress bar, duration display. Uses `MediaPlayer` with temp file. |
 | `app/.../service/SosAudioRecorder.kt` | Singleton audio recorder using `MediaRecorder` with AAC codec (16kHz, 24kbps, mono). Start/stop/cancel API, returns audio bytes for LXMF transmission. |
+| `app/.../service/MessageCollector.kt` | Stores SOS GPS positions in `received_locations` table on reception for breadcrumb trail visualization. |
+| `app/.../viewmodel/MapViewModel.kt` | Added `getSosTrailLocations()` to query location history for a sender from Room DB. |
+| `app/.../ui/screens/MapScreen.kt` | Added `sosTrailSenderHash` parameter. Draws red polyline + dot markers for SOS breadcrumb trail using MapLibre `LineLayer` and `CircleLayer`. |
 
 ### Modified Files
 
