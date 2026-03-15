@@ -64,7 +64,12 @@ class SosManagerTest {
         settingsRepository = mockk()
         reticulumProtocol = mockk()
         notificationHelper = mockk()
-        audioRecorder = mockk(relaxed = true)
+        audioRecorder = mockk()
+        every { audioRecorder.isRecording } returns false
+        every { audioRecorder.hasPermission() } returns false
+        every { audioRecorder.start() } returns false
+        every { audioRecorder.stopAndGetBytes() } returns null
+        every { audioRecorder.cancel() } returns Unit
 
         // Settings defaults
         every { settingsRepository.sosEnabled } returns flowOf(true)
