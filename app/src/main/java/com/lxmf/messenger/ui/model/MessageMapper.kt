@@ -365,6 +365,7 @@ private fun extractImageBytes(fieldsJson: String?): ByteArray? {
  * @param fieldsJson The message's fields JSON
  * @return Raw audio bytes, or null if not found
  */
+@Suppress("ReturnCount")
 fun extractAudioBytes(fieldsJson: String?): ByteArray? {
     if (fieldsJson == null) return null
 

@@ -57,6 +57,7 @@ sealed class SosState {
  * sends emergency messages to all configured SOS contacts, and enters
  * an active state with optional periodic location updates.
  */
+@Suppress("TooManyFunctions")
 @Singleton
 class SosManager
     @Inject
