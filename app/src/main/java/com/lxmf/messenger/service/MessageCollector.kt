@@ -2,8 +2,10 @@ package com.lxmf.messenger.service
 
 import android.util.Log
 import com.lxmf.messenger.data.db.dao.PeerIconDao
+import com.lxmf.messenger.data.db.dao.ReceivedLocationDao
 import com.lxmf.messenger.data.db.entity.ContactStatus
 import com.lxmf.messenger.data.db.entity.PeerIconEntity
+import com.lxmf.messenger.data.db.entity.ReceivedLocationEntity
 import com.lxmf.messenger.data.model.InterfaceType
 import com.lxmf.messenger.data.repository.AnnounceRepository
 import com.lxmf.messenger.data.repository.ContactRepository
@@ -48,6 +50,7 @@ class MessageCollector
         private val identityRepository: IdentityRepository,
         private val notificationHelper: NotificationHelper,
         private val peerIconDao: PeerIconDao,
+        private val receivedLocationDao: ReceivedLocationDao,
         private val conversationLinkManager: ConversationLinkManager,
     ) {
         companion object {
@@ -291,6 +294,25 @@ class MessageCollector
                                         latitude = location?.first,
                                         longitude = location?.second,
                                     )
+                                    // Store SOS location for breadcrumb trail
+                                    if (location != null) {
+                                        try {
+                                            receivedLocationDao.insert(
+                                                ReceivedLocationEntity(
+                                                    id = java.util.UUID.randomUUID().toString(),
+                                                    senderHash = sourceHash,
+                                                    latitude = location.first,
+                                                    longitude = location.second,
+                                                    accuracy = 0f,
+                                                    timestamp = receivedMessage.timestamp,
+                                                    expiresAt = null,
+                                                    receivedAt = System.currentTimeMillis(),
+                                                ),
+                                            )
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "Failed to store SOS location for trail", e)
+                                        }
+                                    }
                                     Log.d(TAG, "Posted SOS notification for message from ${sourceHash.take(16)}")
                                 } else {
                                     notificationHelper.notifyMessageReceived(

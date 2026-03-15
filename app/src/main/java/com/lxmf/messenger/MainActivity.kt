@@ -532,11 +532,12 @@ sealed class PendingNavigation {
         val deviceName: String,
     ) : PendingNavigation()
 
-    /** Navigate to map focused on SOS sender's location */
+    /** Navigate to map focused on SOS sender's location with trail */
     data class SosMapFocus(
         val latitude: Double,
         val longitude: Double,
         val label: String,
+        val senderHash: String? = null,
     ) : PendingNavigation()
 
     /** Navigate to NomadNet browser with a specific node and path */
@@ -821,11 +822,13 @@ fun ColumbaNavigation(
                     }
                     is PendingNavigation.SosMapFocus -> {
                         val encodedLabel = Uri.encode(navigation.label)
+                        val trailHash = navigation.senderHash?.let { Uri.encode(it) } ?: ""
                         navController.navigate(
                             "map_focus?lat=${navigation.latitude}&lon=${navigation.longitude}" +
                                 "&label=$encodedLabel&type=SOS&height=${Float.NaN}" +
                                 "&reachableOn=&port=-1&frequency=-1&bandwidth=-1" +
-                                "&sf=-1&cr=-1&modulation=&status=&lastHeard=-1&hops=-1",
+                                "&sf=-1&cr=-1&modulation=&status=&lastHeard=-1&hops=-1" +
+                                "&sosTrailHash=$trailHash",
                         )
                         Log.d("ColumbaNavigation", "Navigated to map for SOS: ${navigation.label}")
                     }
@@ -1253,7 +1256,8 @@ fun ColumbaNavigation(
                         route =
                             "map_focus?lat={lat}&lon={lon}&label={label}&type={type}&height={height}" +
                                 "&reachableOn={reachableOn}&port={port}&frequency={frequency}&bandwidth={bandwidth}" +
-                                "&sf={sf}&cr={cr}&modulation={modulation}&status={status}&lastHeard={lastHeard}&hops={hops}",
+                                "&sf={sf}&cr={cr}&modulation={modulation}&status={status}&lastHeard={lastHeard}&hops={hops}" +
+                                "&sosTrailHash={sosTrailHash}",
                         arguments =
                             listOf(
                                 navArgument("lat") {
@@ -1316,6 +1320,10 @@ fun ColumbaNavigation(
                                     type = NavType.IntType
                                     defaultValue = -1
                                 },
+                                navArgument("sosTrailHash") {
+                                    type = NavType.StringType
+                                    defaultValue = ""
+                                },
                             ),
                     ) { backStackEntry ->
                         val lat = backStackEntry.arguments?.getFloat("lat")?.toDouble()
@@ -1333,6 +1341,7 @@ fun ColumbaNavigation(
                         val status = backStackEntry.arguments?.getString("status")
                         val lastHeard = backStackEntry.arguments?.getLong("lastHeard")
                         val hops = backStackEntry.arguments?.getInt("hops")
+                        val sosTrailHash = backStackEntry.arguments?.getString("sosTrailHash")?.ifEmpty { null }
 
                         // Build FocusInterfaceDetails if we have valid lat/lon
                         val focusDetails =
@@ -1375,6 +1384,7 @@ fun ColumbaNavigation(
                             focusLongitude = if (lon != 0.0) lon else null,
                             focusLabel = label?.ifEmpty { null },
                             focusInterfaceDetails = focusDetails,
+                            sosTrailSenderHash = sosTrailHash,
                             permissionSheetDismissed = mapPermissionSheetDismissed,
                             onPermissionSheetDismissed = { mapPermissionSheetDismissed = true },
                             permissionCardDismissed = mapPermissionCardDismissed,

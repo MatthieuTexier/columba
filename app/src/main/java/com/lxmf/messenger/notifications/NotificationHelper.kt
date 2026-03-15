@@ -489,6 +489,7 @@ class NotificationHelper
                 val mapPendingIntent = createSosPendingIntent(
                     action = ACTION_SOS_VIEW_MAP,
                     requestCode = "sos_map_$destinationHash",
+                    destinationHash = destinationHash,
                     peerName = peerName,
                     latitude = latitude,
                     longitude = longitude,

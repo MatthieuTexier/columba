@@ -264,9 +264,10 @@ class MainActivityIntentHandler(
         val lat = intent.getDoubleExtra("latitude", 0.0)
         val lon = intent.getDoubleExtra("longitude", 0.0)
         val label = intent.getStringExtra(NotificationHelper.EXTRA_PEER_NAME) ?: "SOS"
+        val senderHash = intent.getStringExtra(NotificationHelper.EXTRA_DESTINATION_HASH)
         if (lat != 0.0 && lon != 0.0) {
-            Log.d(logTag, "SOS view map: focusing on $lat, $lon ($label)")
-            pendingNavigation.value = PendingNavigation.SosMapFocus(lat, lon, "SOS: $label")
+            Log.d(logTag, "SOS view map: focusing on $lat, $lon ($label) trail=${senderHash?.take(8)}")
+            pendingNavigation.value = PendingNavigation.SosMapFocus(lat, lon, "SOS: $label", senderHash)
         }
     }
 

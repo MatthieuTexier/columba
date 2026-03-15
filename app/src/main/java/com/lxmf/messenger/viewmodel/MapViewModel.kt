@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -651,4 +652,14 @@ class MapViewModel
                 receivedLocationDao.deleteLocationsForSender(destinationHash)
             }
         }
+
+        /**
+         * Get all stored locations for a sender (for SOS breadcrumb trail).
+         * Returns a snapshot list, not a Flow, since the trail is drawn once.
+         */
+        suspend fun getSosTrailLocations(
+            senderHash: String,
+        ): List<com.lxmf.messenger.data.db.entity.ReceivedLocationEntity> =
+            receivedLocationDao.getLocationsForSender(senderHash, limit = 200)
+                .first()
     }
