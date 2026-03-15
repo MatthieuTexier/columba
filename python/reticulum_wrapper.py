@@ -3335,13 +3335,20 @@ class ReticulumWrapper:
                                 # Field 4: icon appearance (already parsed above)
                                 pass
                             elif key in (6, 7) and isinstance(value, (list, tuple)) and len(value) >= 2:
-                                # Field 6/7: image/audio
+                                # Field 6/7: image/audio as [format, bytes]
                                 if isinstance(value[1], bytes):
                                     if len(value[1]) > _MAX_INLINE_ATTACHMENT_BYTES:
                                         temp_path = self._write_attachment_staging(msg_hash, f"f{key}", value[1])
                                         fields_serialized[str(key)] = [value[0], None, temp_path]
                                     else:
                                         fields_serialized[str(key)] = [value[0], value[1].hex()]
+                            elif key == 7 and isinstance(value, bytes):
+                                # Field 7: raw audio bytes (no format wrapper)
+                                if len(value) > _MAX_INLINE_ATTACHMENT_BYTES:
+                                    temp_path = self._write_attachment_staging(msg_hash, "f7", value)
+                                    fields_serialized["7"] = ["m4a", None, temp_path]
+                                else:
+                                    fields_serialized["7"] = ["m4a", value.hex()]
                             else:
                                 fields_serialized[str(key)] = str(value)
                         if fields_serialized:
@@ -4401,7 +4408,8 @@ class ReticulumWrapper:
                                        file_attachments: list = None, file_attachment_paths: list = None,
                                        reply_to_message_id: str = None,
                                        icon_name: str = None, icon_fg_color: str = None, icon_bg_color: str = None,
-                                       telemetry_json: str = None) -> Dict:
+                                       telemetry_json: str = None,
+                                       audio_data: bytes = None, audio_data_path: str = None) -> Dict:
         """
         Send an LXMF message with explicit delivery method.
 
@@ -4670,6 +4678,32 @@ class ReticulumWrapper:
                 except Exception as e:
                     log_warning("ReticulumWrapper", "send_lxmf_message_with_method",
                                f"Failed to pack telemetry from JSON: {e}")
+
+            # Add FIELD_AUDIO if audio data provided (SOS audio recording)
+            if audio_data_path:
+                try:
+                    import os
+                    with open(str(audio_data_path), 'rb') as f:
+                        audio_data = f.read()
+                    log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                            f"🎙️ Read audio from disk: {len(audio_data)} bytes")
+                    try:
+                        os.remove(str(audio_data_path))
+                    except Exception:
+                        pass
+                except Exception as e:
+                    log_warning("ReticulumWrapper", "send_lxmf_message_with_method",
+                               f"Failed to read audio from {audio_data_path}: {e}")
+                    audio_data = None
+
+            if audio_data:
+                if hasattr(audio_data, '__iter__') and not isinstance(audio_data, (bytes, bytearray)):
+                    audio_data = bytes(audio_data)
+                if fields is None:
+                    fields = {}
+                fields[FIELD_AUDIO] = ["m4a", audio_data]
+                log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                        f"🎙️ Attaching audio: {len(audio_data)} bytes, format=m4a, field_key={FIELD_AUDIO}")
 
             # Create LXMF message with specified delivery method
             lxmf_message = LXMF.LXMessage(

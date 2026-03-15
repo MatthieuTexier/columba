@@ -312,7 +312,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -357,7 +357,7 @@ class MessagingViewModelTest {
         runViewModelTest {
             // Setup: Mock failed LXMF send
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.failure(Exception("Network error"))
 
             coEvery {
@@ -395,7 +395,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -501,7 +501,7 @@ class MessagingViewModelTest {
             // This avoids crashes when LXMF router isn't ready yet
             // Send a message to trigger identity loading
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(MessageReceipt(ByteArray(32), 3000L, testPeerHash.chunked(2).map { it.toInt(16).toByte() }.toByteArray()))
 
             coEvery {
@@ -593,7 +593,7 @@ class MessagingViewModelTest {
             assertTrue("sendMessage should complete without error", result.isSuccess)
 
             // Verify: sendLxmfMessageWithMethod was NOT called
-            coVerify(exactly = 0) { failingProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
+            coVerify(exactly = 0) { failingProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()) }
 
             // Verify: saveMessage was NOT called
             coVerify(exactly = 0) { failingRepository.saveMessage(any(), any(), any(), any()) }
@@ -652,7 +652,7 @@ class MessagingViewModelTest {
 
             // Assert: Protocol NOT called
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Message NOT saved to database
@@ -677,7 +677,7 @@ class MessagingViewModelTest {
 
             // Verify: No protocol call made
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Verify: No save to database
@@ -701,7 +701,7 @@ class MessagingViewModelTest {
 
             // Assert: Protocol NOT called
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Message NOT saved
@@ -725,7 +725,7 @@ class MessagingViewModelTest {
 
             // Assert: Protocol NOT called
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Message NOT saved
@@ -752,7 +752,7 @@ class MessagingViewModelTest {
 
             // Assert: Protocol NOT called
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Message NOT saved
@@ -772,7 +772,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -824,7 +824,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -844,7 +844,7 @@ class MessagingViewModelTest {
 
             // Assert: Protocol was called (message is valid)
             coVerify(exactly = 1) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Message was saved
@@ -865,7 +865,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -884,7 +884,7 @@ class MessagingViewModelTest {
 
             // Assert: Protocol was called
             coVerify(exactly = 1) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Message was saved
@@ -911,7 +911,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -964,7 +964,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -988,7 +988,7 @@ class MessagingViewModelTest {
 
             // Verify protocol was called
             coVerify(exactly = 1) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Image was cleared after successful send
@@ -2710,7 +2710,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -2759,7 +2759,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery {
@@ -2782,7 +2782,7 @@ class MessagingViewModelTest {
 
             // Verify protocol was called
             coVerify(exactly = 1) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // File attachments should be cleared after successful send
@@ -3390,7 +3390,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
@@ -3443,7 +3443,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
@@ -3475,7 +3475,7 @@ class MessagingViewModelTest {
 
             // Verify protocol was called
             coVerify(exactly = 1) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
 
             // Assert: Pending reply was cleared after successful send
@@ -3494,7 +3494,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
@@ -4432,7 +4432,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
@@ -4455,7 +4455,7 @@ class MessagingViewModelTest {
     fun `isSending is false after failed send`() =
         runViewModelTest {
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.failure(Exception("Network error"))
 
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
@@ -4488,7 +4488,7 @@ class MessagingViewModelTest {
 
             // Protocol should not be called
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -4518,7 +4518,7 @@ class MessagingViewModelTest {
 
             // Protocol should not be called for non-failed messages
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -4549,7 +4549,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery { conversationRepository.updateMessageId(any(), any()) } just Runs
@@ -4602,7 +4602,7 @@ class MessagingViewModelTest {
 
             // Mock send failure
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.failure(Exception("Network error"))
 
             val result = runCatching { viewModel.retryFailedMessage("msg-123") }
@@ -4644,7 +4644,7 @@ class MessagingViewModelTest {
 
             // Protocol should not be called due to invalid hash
             coVerify(exactly = 0) {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             }
         }
 
@@ -4780,7 +4780,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
 
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
@@ -4829,7 +4829,7 @@ class MessagingViewModelTest {
                     destinationHash = destHashBytes,
                 )
             coEvery {
-                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
+                reticulumProtocol.sendLxmfMessageWithMethod(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())
             } returns Result.success(testReceipt)
             coEvery { conversationRepository.saveMessage(any(), any(), any(), any()) } just Runs
 

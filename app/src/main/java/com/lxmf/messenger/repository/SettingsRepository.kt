@@ -174,6 +174,10 @@ class SettingsRepository
             val SOS_TRIGGER_MODE_LEGACY = stringPreferencesKey("sos_trigger_mode")
             val SOS_SHAKE_SENSITIVITY = floatPreferencesKey("sos_shake_sensitivity")
             val SOS_TAP_COUNT = intPreferencesKey("sos_tap_count")
+
+            // SOS audio recording
+            val SOS_AUDIO_ENABLED = booleanPreferencesKey("sos_audio_enabled")
+            val SOS_AUDIO_DURATION_SECONDS = intPreferencesKey("sos_audio_duration_seconds")
         }
 
         // Cross-process SharedPreferences for service communication
@@ -2138,6 +2142,32 @@ class SettingsRepository
         suspend fun setSosTapCount(count: Int) {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.SOS_TAP_COUNT] = count.coerceIn(3, 5)
+            }
+        }
+
+        // ========== SOS Audio Recording Settings ==========
+
+        val sosAudioEnabled: Flow<Boolean> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_AUDIO_ENABLED] ?: false
+                }.distinctUntilChanged()
+
+        suspend fun setSosAudioEnabled(enabled: Boolean) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_AUDIO_ENABLED] = enabled
+            }
+        }
+
+        val sosAudioDurationSeconds: Flow<Int> =
+            context.dataStore.data
+                .map { preferences ->
+                    preferences[PreferencesKeys.SOS_AUDIO_DURATION_SECONDS] ?: 30
+                }.distinctUntilChanged()
+
+        suspend fun setSosAudioDurationSeconds(seconds: Int) {
+            context.dataStore.edit { preferences ->
+                preferences[PreferencesKeys.SOS_AUDIO_DURATION_SECONDS] = seconds.coerceIn(15, 60)
             }
         }
     }

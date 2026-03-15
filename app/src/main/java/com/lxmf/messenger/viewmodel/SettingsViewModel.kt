@@ -180,6 +180,8 @@ data class SettingsState(
     val sosTriggerModes: Set<String> = emptySet(),
     val sosShakeSensitivity: Float = 2.5f,
     val sosTapCount: Int = 3,
+    val sosAudioEnabled: Boolean = false,
+    val sosAudioDurationSeconds: Int = 30,
 )
 
 @Suppress("TooManyFunctions", "LargeClass") // ViewModel with many user interaction methods is expected
@@ -2118,6 +2120,16 @@ class SettingsViewModel
                     _state.update { it.copy(sosTapCount = count) }
                 }
             }
+            viewModelScope.launch {
+                settingsRepository.sosAudioEnabled.collect { enabled ->
+                    _state.update { it.copy(sosAudioEnabled = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosAudioDurationSeconds.collect { seconds ->
+                    _state.update { it.copy(sosAudioDurationSeconds = seconds) }
+                }
+            }
         }
 
         fun setSosEnabled(enabled: Boolean) {
@@ -2170,6 +2182,14 @@ class SettingsViewModel
 
         fun setSosTapCount(count: Int) {
             viewModelScope.launch { settingsRepository.setSosTapCount(count) }
+        }
+
+        fun setSosAudioEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosAudioEnabled(enabled) }
+        }
+
+        fun setSosAudioDurationSeconds(seconds: Int) {
+            viewModelScope.launch { settingsRepository.setSosAudioDurationSeconds(seconds) }
         }
 
         private fun loadUpdateSettings() {

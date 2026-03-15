@@ -199,6 +199,8 @@ class SettingsViewModelIncomingMessageLimitTest {
         every { settingsRepository.sosTriggerModes } returns flowOf(emptySet())
         every { settingsRepository.sosShakeSensitivity } returns flowOf(2.5f)
         every { settingsRepository.sosTapCount } returns flowOf(3)
+        every { settingsRepository.sosAudioEnabled } returns flowOf(false)
+        every { settingsRepository.sosAudioDurationSeconds } returns flowOf(30)
         every { contactRepository.getSosContactsFlow() } returns flowOf(emptyList())
         coEvery { settingsRepository.getLastUpdateCheckTime() } returns System.currentTimeMillis()
 

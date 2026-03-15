@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -65,6 +66,7 @@ class SosManager
         private val settingsRepository: SettingsRepository,
         private val reticulumProtocol: ReticulumProtocol,
         private val notificationHelper: NotificationHelper,
+        private val audioRecorder: SosAudioRecorder,
     ) {
         companion object {
             private const val TAG = "SosManager"
@@ -87,6 +89,7 @@ class SosManager
 
         private var countdownJob: Job? = null
         private var periodicUpdateJob: Job? = null
+        private var audioRecordingJob: Job? = null
 
         @Volatile private var cachedDeactivationPin: String? = null
         @Volatile private var cachedSilentAutoAnswer: Boolean = false
@@ -177,6 +180,9 @@ class SosManager
 
             periodicUpdateJob?.cancel()
             periodicUpdateJob = null
+            audioRecordingJob?.cancel()
+            audioRecordingJob = null
+            audioRecorder.cancel()
             notificationHelper.cancelNotification(NotificationHelper.NOTIFICATION_ID_SOS)
             _state.value = SosState.Idle
             scope.launch { settingsRepository.clearSosActiveState() }
@@ -285,6 +291,11 @@ class SosManager
             if (periodicUpdates) {
                 startPeriodicUpdates()
             }
+
+            val audioEnabled = settingsRepository.sosAudioEnabled.first()
+            if (audioEnabled && identity != null) {
+                startAudioRecording(identity, contacts.map { it.destinationHash })
+            }
         }
 
         @SuppressLint("MissingPermission")
@@ -349,6 +360,47 @@ class SosManager
 
                     Log.d(TAG, "Periodic SOS update sent to ${contacts.size} contacts")
                 }
+            }
+        }
+
+        private fun startAudioRecording(
+            identity: com.lxmf.messenger.reticulum.model.Identity,
+            contactHashes: List<String>,
+        ) {
+            audioRecordingJob = scope.launch {
+                val durationSeconds = settingsRepository.sosAudioDurationSeconds.first()
+
+                val started = withContext(Dispatchers.Main) { audioRecorder.start() }
+                if (!started) {
+                    Log.w(TAG, "Audio recording failed to start")
+                    return@launch
+                }
+
+                Log.d(TAG, "SOS audio recording for ${durationSeconds}s")
+                delay(durationSeconds * 1_000L)
+
+                val audioBytes = withContext(Dispatchers.Main) { audioRecorder.stopAndGetBytes() }
+                if (audioBytes == null) {
+                    Log.w(TAG, "Audio recording returned no data")
+                    return@launch
+                }
+
+                Log.d(TAG, "Sending SOS audio (${audioBytes.size} bytes) to ${contactHashes.size} contacts")
+                for (hash in contactHashes) {
+                    try {
+                        val destHashBytes = hash.hexToByteArray()
+                        reticulumProtocol.sendLxmfMessageWithMethod(
+                            destinationHash = destHashBytes,
+                            content = "SOS Audio Recording",
+                            sourceIdentity = identity,
+                            audioData = audioBytes,
+                        )
+                    } catch (e: Exception) {
+                        ensureActive()
+                        Log.e(TAG, "Error sending SOS audio to ${hash.take(8)}...", e)
+                    }
+                }
+                Log.d(TAG, "SOS audio sent to ${contactHashes.size} contacts")
             }
         }
 

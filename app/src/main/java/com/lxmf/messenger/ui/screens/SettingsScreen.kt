@@ -439,6 +439,10 @@ fun SettingsScreen(
                     onSosShakeSensitivityChange = { viewModel.setSosShakeSensitivity(it) },
                     sosTapCount = state.sosTapCount,
                     onSosTapCountChange = { viewModel.setSosTapCount(it) },
+                    sosAudioEnabled = state.sosAudioEnabled,
+                    onSosAudioEnabledChange = { viewModel.setSosAudioEnabled(it) },
+                    sosAudioDurationSeconds = state.sosAudioDurationSeconds,
+                    onSosAudioDurationSecondsChange = { viewModel.setSosAudioDurationSeconds(it) },
                 )
 
                 MapSourcesCard(

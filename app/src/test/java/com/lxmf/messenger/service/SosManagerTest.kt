@@ -49,6 +49,7 @@ class SosManagerTest {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var reticulumProtocol: ReticulumProtocol
     private lateinit var notificationHelper: NotificationHelper
+    private lateinit var audioRecorder: SosAudioRecorder
     private lateinit var sosManager: SosManager
 
     private val mockIdentity = mockk<Identity>()
@@ -63,6 +64,7 @@ class SosManagerTest {
         settingsRepository = mockk()
         reticulumProtocol = mockk()
         notificationHelper = mockk()
+        audioRecorder = mockk(relaxed = true)
 
         // Settings defaults
         every { settingsRepository.sosEnabled } returns flowOf(true)
@@ -76,6 +78,8 @@ class SosManagerTest {
         every { settingsRepository.sosActive } returns flowOf(false)
         every { settingsRepository.sosActiveSentCount } returns flowOf(0)
         every { settingsRepository.sosActiveFailedCount } returns flowOf(0)
+        every { settingsRepository.sosAudioEnabled } returns flowOf(false)
+        every { settingsRepository.sosAudioDurationSeconds } returns flowOf(30)
         coEvery { settingsRepository.persistSosActiveState(any(), any()) } just Runs
         coEvery { settingsRepository.clearSosActiveState() } just Runs
 
@@ -92,7 +96,7 @@ class SosManagerTest {
         // Default sendLxmfMessageWithMethod mock
         coEvery {
             reticulumProtocol.sendLxmfMessageWithMethod(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
             )
         } returns Result.success(mockReceipt)
 
@@ -102,6 +106,7 @@ class SosManagerTest {
             settingsRepository = settingsRepository,
             reticulumProtocol = reticulumProtocol,
             notificationHelper = notificationHelper,
+            audioRecorder = audioRecorder,
         )
         sosManager.dispatcher = testDispatcher
     }

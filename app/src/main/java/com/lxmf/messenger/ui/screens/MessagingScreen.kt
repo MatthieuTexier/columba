@@ -164,6 +164,7 @@ import com.lxmf.messenger.R
 import com.lxmf.messenger.notifications.NotificationHelper
 import com.lxmf.messenger.service.SyncProgress
 import com.lxmf.messenger.service.SyncResult
+import com.lxmf.messenger.ui.components.AudioMessagePlayer
 import com.lxmf.messenger.ui.components.AttachmentPanel
 import com.lxmf.messenger.ui.components.CodecSelectionDialog
 import com.lxmf.messenger.ui.components.FileAttachmentCard
@@ -183,6 +184,7 @@ import com.lxmf.messenger.ui.components.SwipeableMessageBubble
 import com.lxmf.messenger.ui.components.SyncStatusBottomSheet
 import com.lxmf.messenger.ui.components.simpleVerticalScrollbar
 import com.lxmf.messenger.ui.model.CodecProfile
+import com.lxmf.messenger.ui.model.extractAudioBytes
 import com.lxmf.messenger.ui.model.LocationSharingState
 import com.lxmf.messenger.ui.theme.MeshConnected
 import com.lxmf.messenger.ui.theme.MeshOffline
@@ -2112,6 +2114,17 @@ fun MessageBubble(
                                         )
                                     },
                                 )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+
+                        // Display audio player if present (LXMF field 7 = AUDIO)
+                        if (message.hasAudioAttachment) {
+                            val audioBytes = remember(message.id) {
+                                extractAudioBytes(message.fieldsJson)
+                            }
+                            if (audioBytes != null) {
+                                AudioMessagePlayer(audioBytes = audioBytes)
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
                         }

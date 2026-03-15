@@ -27,6 +27,8 @@ Add a complete SOS Emergency feature to Columba, allowing users to send emergenc
 - Receiver-side: urgent persistent notifications with "Open Chat" and "View on Map" actions
 - Receiver-side: SOS messages displayed with red emergency styling in chat
 - Receiver-side: clickable "View on Map" button for GPS-tagged SOS messages
+- **Audio recording**: Records ambient audio (AAC/M4A, 16kHz) for configurable duration (15-60s) when SOS is triggered, sent as a separate LXMF message via `FIELD_AUDIO (0x07)`
+- **Audio playback**: Received audio messages display an inline player (play/pause + progress bar) in the chat view
 
 ---
 
@@ -118,6 +120,15 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 6. Persistent notification shows "SOS Active — X contacts notified"
 7. If periodic updates enabled: sends "SOS Update - GPS: lat, lng (accuracy: Xm) - Battery: X%" at configured interval with updated telemetry
 
+#### SOS Audio Recording
+- When `sosAudioEnabled` is true, audio recording starts immediately after SOS messages are sent
+- Uses `MediaRecorder` with AAC codec at 16kHz mono, 24kbps → ~90KB for 30s
+- Recording runs for `sosAudioDurationSeconds` (configurable 15-60s in settings)
+- Audio is sent as a separate LXMF message with `FIELD_AUDIO (0x07)` in `[format, bytes]` format
+- Sent asynchronously — the initial text+GPS alert goes out instantly, audio follows after recording completes
+- If SOS is deactivated before recording finishes, the recording is cancelled
+- Receiver sees an inline audio player (play/pause + progress bar) in the chat view
+
 #### SOS Deactivation
 - If no PIN configured: simple deactivation returns to `Idle`
 - If PIN configured: user must enter correct PIN to deactivate
@@ -171,6 +182,8 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 | `app/.../service/SosTriggerService.kt` | Lightweight foreground service (`specialUse`) with persistent notification. Keeps the main process alive for accelerometer detection and active SOS periodic updates. Started/stopped by `SosTriggerDetector.startObserving()`. |
 | `app/.../receiver/BootReceiver.kt` | `BOOT_COMPLETED` broadcast receiver. Starts `ReticulumService` and `SosTriggerService` on device boot so mesh networking and SOS detection/state resume automatically without user interaction. |
 | `app/.../ui/components/SosOverlay.kt` | Composable for SOS UI states: countdown dialog, sending dialog, active banner (placed in Scaffold `bottomBar` above NavigationBar), and deactivation dialog with optional PIN input. |
+| `app/.../ui/components/AudioMessagePlayer.kt` | Composable audio player for LXMF FIELD_AUDIO messages. Play/pause button, linear progress bar, duration display. Uses `MediaPlayer` with temp file. |
+| `app/.../service/SosAudioRecorder.kt` | Singleton audio recorder using `MediaRecorder` with AAC codec (16kHz, 24kbps, mono). Start/stop/cancel API, returns audio bytes for LXMF transmission. |
 
 ### Modified Files
 
