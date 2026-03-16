@@ -76,6 +76,8 @@ All SOS settings are in a dedicated collapsible card in Settings. The feature is
 | Trigger Modes | `{}` (empty set) | Which automatic triggers are active (multi-select): `shake`, `tap_pattern`, `power_button`. Empty = manual button only. |
 | Shake Sensitivity | `2.5x` | Multiplier of gravity for shake threshold (1.0-5.0, lower = more sensitive) |
 | Tap Count | `3` | Number of rapid taps required for tap pattern trigger (3-5, spike-based detection) |
+| Audio Recording | `false` | Record ambient audio when SOS triggers |
+| Audio Duration | `30` seconds | Length of audio recording (15-60s) |
 
 All settings are persisted in DataStore (`SettingsRepository`) as typed `Flow<T>` properties.
 
@@ -87,9 +89,9 @@ Trigger modes are multi-select: any combination can be active simultaneously. Wh
 
 **Tap Pattern**: Uses a spike-based state machine for reliable detection. A tap is counted only when net acceleration crosses above 4.0 m/s² and returns below it within 100ms (a complete impulse event). This rejects walking steps (~150-300ms spike duration) and sustained vibrations while reliably catching brief finger taps (20-80ms). When `tapCount` taps are detected within a 2.5-second sliding window, SOS is triggered. A 150ms debounce between registered taps prevents ring-down artifacts from being double-counted. A 5-second cooldown prevents repeat triggers.
 
-**Power Button**: Detects rapid `SCREEN_OFF` events via a `BroadcastReceiver`. 3 presses within a 2-second window trigger SOS. A 5-second cooldown prevents repeat triggers. This does not conflict with Android's built-in Emergency SOS (which requires 5 presses).
+**Power Button**: Detects rapid power button presses via a `BroadcastReceiver` listening to both `ACTION_SCREEN_OFF` and `ACTION_SCREEN_ON` (each press toggles screen state, so both events are needed to count every press). 3 presses within a 2-second window trigger SOS. A 5-second cooldown prevents repeat triggers. This does not conflict with Android's built-in Emergency SOS (which requires 5 presses).
 
-Gesture modes (shake/tap) work through `SosTriggerDetector`, a singleton `SensorEventListener` registered on `TYPE_ACCELEROMETER` with `SENSOR_DELAY_GAME` (~20ms sampling). Power button detection uses a `BroadcastReceiver` for `ACTION_SCREEN_OFF`. All listeners are registered/unregistered based on the active mode set. When shake and tap are both active, each sensor event is dispatched to both handlers independently.
+Gesture modes (shake/tap) work through `SosTriggerDetector`, a singleton `SensorEventListener` registered on `TYPE_ACCELEROMETER` with `SENSOR_DELAY_GAME` (~20ms sampling). Power button detection uses a `BroadcastReceiver` for `ACTION_SCREEN_OFF` and `ACTION_SCREEN_ON`. All listeners are registered/unregistered based on the active mode set. When shake and tap are both active, each sensor event is dispatched to both handlers independently.
 
 #### Background Service & Boot Resilience
 
@@ -278,7 +280,7 @@ Supports French ("URGENCE") and English ("EMERGENCY", "SOS") prefixes. Detection
 
 ## Unit Tests
 
-### SosManagerTest (27 tests)
+### SosManagerTest (34 tests)
 Tests the core state machine, telemetry, and persistence:
 - Initial state is `Idle`
 - Trigger with countdown starts countdown, ticks correctly, transitions to Sending
@@ -302,7 +304,7 @@ Tests the core state machine, telemetry, and persistence:
 - Strict mocks (`mockk()` not `mockk(relaxed = true)`) with explicit stubs for `Location` (`hasAltitude()`, `hasSpeed()`, `hasBearing()`) and `BatteryManager`
 - `advanceTimeBy(500)` (not `advanceUntilIdle()`) for tests involving `startPeriodicUpdates()` infinite loop
 
-### SosTriggerDetectorTest (30 tests)
+### SosTriggerDetectorTest (28 tests)
 Tests spike-based tap detection, shake detection, power button detection, and multi-mode enum:
 - Single tap does not trigger, 3/5 taps trigger correctly
 - Tap window expiry resets count
@@ -326,19 +328,6 @@ Tests ViewModel delegation:
 - State flow propagation from SosManager
 - `trigger()`, `cancel()`, `deactivate()` delegation
 - UI state composition
-
-### ContactRepositorySosTest (13 tests)
-Tests tag-based SOS contact management:
-- `getSosContacts()` filters by `"sos"` tag
-- `toggleSosTag()` adds `"sos"` to empty tags
-- `toggleSosTag()` adds `"sos"` alongside existing tags
-- `toggleSosTag()` removes `"sos"` when already present
-- `toggleSosTag()` clears tags to null when `"sos"` was the only tag
-- `isSosContact` computed property on EnrichedContact
-
-**Key testing patterns:**
-- `match { tags -> ... }` and `isNull()` matchers for nullable String parameters (MockK `capture()` doesn't support nullable types)
-- Verifying JSON tag manipulation correctness
 
 ### Fixed Existing Tests
 - **ContactsScreenTest**: Updated 7 `ContactContextMenu` call sites with new `isSos`/`onToggleSos` params
@@ -470,7 +459,14 @@ Tests tag-based SOS contact management:
 3. Deactivate, then press power button 3x → verify SOS triggers
 4. Enable all 3 modes simultaneously → verify each can trigger independently
 
-### Scenario 20: Background Service Lifecycle
+### Scenario 20: Audio Recording
+1. A enables "Audio Recording" in SOS settings, set duration to 30s
+2. A triggers SOS → verify text+GPS message sent immediately
+3. After ~30s → verify B receives a second message with audio player
+4. B taps play → verify audio plays back
+5. Deactivate SOS before recording finishes → verify recording cancelled, no audio sent
+
+### Scenario 21: Background Service Lifecycle
 1. Enable SOS with any trigger mode → verify "SOS Monitoring Active" notification appears
 2. Navigate away from app → verify notification persists (service keeps process alive)
 3. Uncheck all trigger modes → verify notification disappears
@@ -506,4 +502,6 @@ _To be added after implementation._
 - **Low risk**: State persistence uses existing DataStore infrastructure; 3 boolean/int keys with negligible storage overhead
 - **Low risk**: Boot receiver starts services automatically — if SOS is disabled, services stop within seconds after DataStore is read
 - **Medium risk**: Shake/tap false positives — mitigated by configurable sensitivity, cumulative duration threshold (shake), spike-based state machine with duration filter (tap rejects walking/sustained motion), and always requiring the countdown phase
-- **Low risk**: Power button trigger uses 3 presses (vs Android's 5-press Emergency SOS) — no conflict. SCREEN_OFF events are reliable across Android versions
+- **Low risk**: Power button trigger uses 3 presses (vs Android's 5-press Emergency SOS) — no conflict. SCREEN_OFF/SCREEN_ON events are reliable across Android versions
+- **Low risk**: Audio recording uses standard MediaRecorder AAC codec, 16kHz mono — small file size (~90KB for 30s), reliable across Android versions. Recording is cancelled cleanly on deactivation
+- **Low risk**: FIELD_AUDIO (0x07) uses `[format, bytes]` tuple — forward-compatible, unknown fields are ignored by older clients
