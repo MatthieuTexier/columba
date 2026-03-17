@@ -1143,74 +1143,70 @@ fun MapScreen(
             Log.d("MapScreen", "Added focus marker at $focusLatitude, $focusLongitude for $focusLabel")
         }
 
-        // SOS breadcrumb trail - draw polyline connecting all GPS positions from the sender
+        // SOS breadcrumb trail - live updates as new positions arrive
         LaunchedEffect(sosTrailSenderHash, mapStyleLoaded) {
             if (!mapStyleLoaded || sosTrailSenderHash == null) return@LaunchedEffect
             val map = mapLibreMap ?: return@LaunchedEffect
-            val style = map.style ?: return@LaunchedEffect
             val screenDensity = context.resources.displayMetrics.density
-
-            val locations = viewModel.getSosTrailLocations(sosTrailSenderHash)
-            if (locations.size < 2) return@LaunchedEffect
 
             val trailSourceId = "sos-trail-source"
             val trailLayerId = "sos-trail-layer"
             val dotsSourceId = "sos-trail-dots-source"
             val dotsLayerId = "sos-trail-dots-layer"
 
-            // Build polyline from oldest to newest
-            val sortedLocations = locations.sortedBy { it.timestamp }
-            val points = sortedLocations.map { Point.fromLngLat(it.longitude, it.latitude) }
-            val lineFeature = Feature.fromGeometry(LineString.fromLngLats(points))
+            viewModel.observeSosTrailLocations(sosTrailSenderHash).collect { locations ->
+                if (locations.size < 2) return@collect
+                val style = map.style ?: return@collect
 
-            // Dot markers at each position
-            val dotFeatures = sortedLocations.map { loc ->
-                Feature.fromGeometry(Point.fromLngLat(loc.longitude, loc.latitude))
-            }
-
-            // Trail polyline
-            val existingTrailSource = style.getSourceAs<GeoJsonSource>(trailSourceId)
-            if (existingTrailSource != null) {
-                existingTrailSource.setGeoJson(FeatureCollection.fromFeatures(listOf(lineFeature)))
-            } else {
-                style.addSource(GeoJsonSource(trailSourceId, FeatureCollection.fromFeatures(listOf(lineFeature))))
-                val trailLayer = LineLayer(trailLayerId, trailSourceId)
-                    .withProperties(
-                        PropertyFactory.lineWidth(3f * screenDensity),
-                        PropertyFactory.lineColor(Expression.color(android.graphics.Color.parseColor("#F44336"))),
-                        PropertyFactory.lineOpacity(Expression.literal(0.8f)),
-                    )
-                // Add below focus marker so the marker is on top
-                val belowLayer = style.getLayer("focus-marker-layer")
-                if (belowLayer != null) {
-                    style.addLayerBelow(trailLayer, "focus-marker-layer")
-                } else {
-                    style.addLayer(trailLayer)
+                val sortedLocations = locations.sortedBy { it.timestamp }
+                val points = sortedLocations.map { Point.fromLngLat(it.longitude, it.latitude) }
+                val lineFeature = Feature.fromGeometry(LineString.fromLngLats(points))
+                val dotFeatures = sortedLocations.map { loc ->
+                    Feature.fromGeometry(Point.fromLngLat(loc.longitude, loc.latitude))
                 }
-            }
 
-            // Trail dot markers
-            val existingDotsSource = style.getSourceAs<GeoJsonSource>(dotsSourceId)
-            if (existingDotsSource != null) {
-                existingDotsSource.setGeoJson(FeatureCollection.fromFeatures(dotFeatures))
-            } else {
-                style.addSource(GeoJsonSource(dotsSourceId, FeatureCollection.fromFeatures(dotFeatures)))
-                val dotsLayer = CircleLayer(dotsLayerId, dotsSourceId)
-                    .withProperties(
-                        PropertyFactory.circleRadius(4f * screenDensity),
-                        PropertyFactory.circleColor(Expression.color(android.graphics.Color.parseColor("#F44336"))),
-                        PropertyFactory.circleStrokeWidth(1f * screenDensity),
-                        PropertyFactory.circleStrokeColor(Expression.color(android.graphics.Color.WHITE)),
-                    )
-                // Add dots above the trail line
-                if (style.getLayer(trailLayerId) != null) {
-                    style.addLayerAbove(dotsLayer, trailLayerId)
+                // Trail polyline
+                val existingTrailSource = style.getSourceAs<GeoJsonSource>(trailSourceId)
+                if (existingTrailSource != null) {
+                    existingTrailSource.setGeoJson(FeatureCollection.fromFeatures(listOf(lineFeature)))
                 } else {
-                    style.addLayer(dotsLayer)
+                    style.addSource(GeoJsonSource(trailSourceId, FeatureCollection.fromFeatures(listOf(lineFeature))))
+                    val trailLayer = LineLayer(trailLayerId, trailSourceId)
+                        .withProperties(
+                            PropertyFactory.lineWidth(3f * screenDensity),
+                            PropertyFactory.lineColor(Expression.color(android.graphics.Color.parseColor("#F44336"))),
+                            PropertyFactory.lineOpacity(Expression.literal(0.8f)),
+                        )
+                    val belowLayer = style.getLayer("focus-marker-layer")
+                    if (belowLayer != null) {
+                        style.addLayerBelow(trailLayer, "focus-marker-layer")
+                    } else {
+                        style.addLayer(trailLayer)
+                    }
                 }
-            }
 
-            Log.d("MapScreen", "Drew SOS trail with ${locations.size} points for ${sosTrailSenderHash.take(8)}")
+                // Trail dot markers
+                val existingDotsSource = style.getSourceAs<GeoJsonSource>(dotsSourceId)
+                if (existingDotsSource != null) {
+                    existingDotsSource.setGeoJson(FeatureCollection.fromFeatures(dotFeatures))
+                } else {
+                    style.addSource(GeoJsonSource(dotsSourceId, FeatureCollection.fromFeatures(dotFeatures)))
+                    val dotsLayer = CircleLayer(dotsLayerId, dotsSourceId)
+                        .withProperties(
+                            PropertyFactory.circleRadius(4f * screenDensity),
+                            PropertyFactory.circleColor(Expression.color(android.graphics.Color.parseColor("#F44336"))),
+                            PropertyFactory.circleStrokeWidth(1f * screenDensity),
+                            PropertyFactory.circleStrokeColor(Expression.color(android.graphics.Color.WHITE)),
+                        )
+                    if (style.getLayer(trailLayerId) != null) {
+                        style.addLayerAbove(dotsLayer, trailLayerId)
+                    } else {
+                        style.addLayer(dotsLayer)
+                    }
+                }
+
+                Log.d("MapScreen", "Updated SOS trail: ${locations.size} points for ${sosTrailSenderHash.take(8)}")
+            }
         }
 
         // Gradient scrim behind TopAppBar for readability

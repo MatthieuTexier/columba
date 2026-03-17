@@ -654,12 +654,10 @@ class MapViewModel
         }
 
         /**
-         * Get all stored locations for a sender (for SOS breadcrumb trail).
-         * Returns a snapshot list, not a Flow, since the trail is drawn once.
+         * Observe all stored locations for a sender (for live SOS breadcrumb trail).
          */
-        suspend fun getSosTrailLocations(
+        fun observeSosTrailLocations(
             senderHash: String,
-        ): List<com.lxmf.messenger.data.db.entity.ReceivedLocationEntity> =
+        ): kotlinx.coroutines.flow.Flow<List<com.lxmf.messenger.data.db.entity.ReceivedLocationEntity>> =
             receivedLocationDao.getLocationsForSender(senderHash, limit = 200)
-                .first()
     }
