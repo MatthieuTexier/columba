@@ -168,9 +168,6 @@ class SettingsRepository
             val SOS_ACTIVE_SENT_COUNT = intPreferencesKey("sos_active_sent_count")
             val SOS_ACTIVE_FAILED_COUNT = intPreferencesKey("sos_active_failed_count")
 
-            // SOS active senders (receiver-side: set of destination hashes with active SOS)
-            val SOS_ACTIVE_SENDERS = stringSetPreferencesKey("sos_active_senders")
-
             // SOS trigger modes (multi-select set, migrated from legacy single-mode string)
             val SOS_TRIGGER_MODES = stringSetPreferencesKey("sos_trigger_modes")
             @Deprecated("Legacy single mode key, kept for migration")
@@ -2099,28 +2096,6 @@ class SettingsRepository
                 preferences[PreferencesKeys.SOS_ACTIVE] = false
                 preferences.remove(PreferencesKeys.SOS_ACTIVE_SENT_COUNT)
                 preferences.remove(PreferencesKeys.SOS_ACTIVE_FAILED_COUNT)
-            }
-        }
-
-        // ========== SOS Active Senders (Receiver Side) ==========
-
-        val sosActiveSenders: Flow<Set<String>> =
-            context.dataStore.data
-                .map { preferences ->
-                    preferences[PreferencesKeys.SOS_ACTIVE_SENDERS] ?: emptySet()
-                }.distinctUntilChanged()
-
-        suspend fun addSosActiveSender(hash: String) {
-            context.dataStore.edit { preferences ->
-                val current = preferences[PreferencesKeys.SOS_ACTIVE_SENDERS] ?: emptySet()
-                preferences[PreferencesKeys.SOS_ACTIVE_SENDERS] = current + hash
-            }
-        }
-
-        suspend fun removeSosActiveSender(hash: String) {
-            context.dataStore.edit { preferences ->
-                val current = preferences[PreferencesKeys.SOS_ACTIVE_SENDERS] ?: emptySet()
-                preferences[PreferencesKeys.SOS_ACTIVE_SENDERS] = current - hash
             }
         }
 

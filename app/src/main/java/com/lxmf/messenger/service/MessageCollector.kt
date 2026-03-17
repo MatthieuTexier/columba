@@ -50,7 +50,6 @@ class MessageCollector
         private val contactRepository: ContactRepository,
         private val identityRepository: IdentityRepository,
         private val notificationHelper: NotificationHelper,
-        private val sosActiveTracker: SosActiveTracker,
         private val peerIconDao: PeerIconDao,
         private val receivedLocationDao: ReceivedLocationDao,
         private val conversationLinkManager: ConversationLinkManager,
@@ -155,17 +154,37 @@ class MessageCollector
                                     false
                                 }
 
+                            // Track SOS active state (works for both new and already-persisted messages)
+                            if (isSosCancelledMessage(receivedMessage.content)) {
+                                SosActiveTracker.removeSender(sourceHash)
+                                Log.d(TAG, "Cleared SOS active for ${sourceHash.take(16)} (already-persisted)")
+                            } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                SosActiveTracker.addSender(sourceHash)
+                                Log.d(TAG, "Set SOS active for ${sourceHash.take(16)} (already-persisted)")
+                            }
+
                             // Only notify if the message hasn't been read yet
                             // This prevents duplicate notifications after service restart
                             // for messages the user has already seen
                             if (!existingMessage.isRead) {
                                 try {
-                                    notificationHelper.notifyMessageReceived(
-                                        destinationHash = sourceHash,
-                                        peerName = peerName,
-                                        messagePreview = receivedMessage.content.take(100),
-                                        isFavorite = isFavorite,
-                                    )
+                                    if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                        val location = notificationHelper.parseSosLocation(receivedMessage.content)
+                                        notificationHelper.notifySosReceived(
+                                            destinationHash = sourceHash,
+                                            peerName = peerName,
+                                            messageContent = receivedMessage.content,
+                                            latitude = location?.first,
+                                            longitude = location?.second,
+                                        )
+                                    } else {
+                                        notificationHelper.notifyMessageReceived(
+                                            destinationHash = sourceHash,
+                                            peerName = peerName,
+                                            messagePreview = receivedMessage.content.take(100),
+                                            isFavorite = isFavorite,
+                                        )
+                                    }
                                     Log.d(TAG, "Posted notification for already-persisted unread message")
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Failed to post notification for already-persisted message", e)
@@ -288,10 +307,10 @@ class MessageCollector
                             // Show notification - SOS messages get urgent treatment
                             try {
                                 if (isSosCancelledMessage(receivedMessage.content)) {
-                                    sosActiveTracker.removeSender(sourceHash)
+                                    SosActiveTracker.removeSender(sourceHash)
                                     Log.d(TAG, "Cleared SOS active for ${sourceHash.take(16)}")
                                 } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
-                                    sosActiveTracker.addSender(sourceHash)
+                                    SosActiveTracker.addSender(sourceHash)
                                     val location = notificationHelper.parseSosLocation(receivedMessage.content)
                                     notificationHelper.notifySosReceived(
                                         destinationHash = sourceHash,

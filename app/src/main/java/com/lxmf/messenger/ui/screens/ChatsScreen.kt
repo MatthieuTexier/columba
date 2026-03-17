@@ -456,7 +456,7 @@ fun ConversationCard(
                     onLongClick = onLongPress,
                 ),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (hasSosActive) 0.dp else 2.dp),
         border = if (hasSosActive) {
             androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.error)
         } else {
@@ -465,7 +465,7 @@ fun ConversationCard(
         colors =
             CardDefaults.cardColors(
                 containerColor = if (hasSosActive) {
-                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                    MaterialTheme.colorScheme.errorContainer
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant
                 },

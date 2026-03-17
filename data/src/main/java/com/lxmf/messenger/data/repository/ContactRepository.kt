@@ -116,14 +116,6 @@ class ContactRepository
             }
 
         /**
-         * Check if a contact has an active SOS emergency (receiver side).
-         */
-        fun hasSosActiveFlow(destinationHash: String): Flow<Boolean> =
-            getContactFlow(destinationHash).map { contact ->
-                contact?.tags?.contains("sos_active") == true
-            }
-
-        /**
          * Add a contact from an announce (when user stars an announce).
          * Display name will automatically use the announce's peerName via database COALESCE.
          *
@@ -722,55 +714,6 @@ class ContactRepository
                 tagsList.remove("sos")
             } else {
                 tagsList.add("sos")
-            }
-
-            val newTags = if (tagsList.isEmpty()) {
-                null
-            } else {
-                "[${tagsList.joinToString(",") { "\"$it\"" }}]"
-            }
-            contactDao.updateTags(destinationHash, activeIdentity.identityHash, newTags)
-        }
-
-        /**
-         * Set a contact as having an active SOS (add "sos_active" tag).
-         */
-        suspend fun setSosActive(destinationHash: String) {
-            setTag(destinationHash, "sos_active", add = true)
-        }
-
-        /**
-         * Clear the active SOS state for a contact (remove "sos_active" tag).
-         */
-        suspend fun clearSosActive(destinationHash: String) {
-            setTag(destinationHash, "sos_active", add = false)
-        }
-
-        private suspend fun setTag(destinationHash: String, tag: String, add: Boolean) {
-            val activeIdentity = localIdentityDao.getActiveIdentitySync() ?: return
-            val contact = contactDao.getContact(destinationHash, activeIdentity.identityHash) ?: return
-            val currentTags = contact.tags
-            val tagsList = if (currentTags.isNullOrBlank()) {
-                mutableListOf()
-            } else {
-                try {
-                    currentTags.trim()
-                        .removePrefix("[")
-                        .removeSuffix("]")
-                        .split(",")
-                        .map { it.trim().removeSurrounding("\"") }
-                        .filter { it.isNotEmpty() }
-                        .toMutableList()
-                } catch (e: Exception) {
-                    Log.w("ContactRepository", "Failed to parse tags: $currentTags", e)
-                    mutableListOf()
-                }
-            }
-
-            if (add && !tagsList.contains(tag)) {
-                tagsList.add(tag)
-            } else if (!add) {
-                tagsList.remove(tag)
             }
 
             val newTags = if (tagsList.isEmpty()) {
