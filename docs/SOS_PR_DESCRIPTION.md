@@ -11,7 +11,7 @@
 Add a complete SOS Emergency feature to Columba, allowing users to send emergency distress signals to pre-selected contacts over the LXMF mesh network. The feature includes a full sender-side state machine with countdown, GPS location embedding, battery level reporting, Sideband-compatible LXMF telemetry (`FIELD_TELEMETRY`), periodic updates, and a receiver-side experience with urgent notifications, visual SOS message differentiation in chat, and one-tap map navigation.
 
 **Key capabilities:**
-- Designate contacts as "SOS contacts" from Contacts or Chats screen (tag-based, persisted in DB)
+- Designate contacts as "SOS contacts" from Contacts or Chats screen (tag-based, persisted in DB, red badge on avatar)
 - Trigger SOS with optional countdown timer (configurable 0-30s)
 - Automatic GPS location and battery level embedding in SOS messages
 - Sideband-compatible LXMF telemetry (`FIELD_TELEMETRY 0x02`) with `SID_LOCATION` and `SID_BATTERY`
@@ -28,7 +28,7 @@ Add a complete SOS Emergency feature to Columba, allowing users to send emergenc
 - Receiver-side: SOS messages displayed with red emergency styling in chat
 - Receiver-side: clickable "View on Map" button for GPS-tagged SOS messages
 - **Audio recording**: Records ambient audio (AAC/M4A, 16kHz) for configurable duration (15-60s) when SOS is triggered, sent as a separate LXMF message via `FIELD_AUDIO (0x07)`
-- **Audio playback**: Received audio messages display an inline player (play/pause + progress bar) in the chat view
+- **Audio playback**: Received audio messages display an inline player (play/pause + progress bar + share button) in the chat view
 - **Breadcrumb trail**: Receiver-side map shows a red polyline connecting all GPS positions from an SOS sender chronologically, with dot markers at each point
 
 ---
@@ -146,6 +146,7 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 - If PIN configured: user must enter correct PIN to deactivate
 - Wrong PIN: state stays `Active`, error counter increments
 - Deactivation cancels periodic update job and clears the persistent notification
+- **Cancellation message**: On deactivation, sends "SOS Cancelled — I am safe." to all SOS contacts so they know the emergency is over
 - **Auto-deactivation**: If the user disables the SOS feature toggle while SOS is active, `SosTriggerDetector.startObserving()` automatically calls `sosManager.deactivate()` to clean up state and stop the foreground service
 
 ### Receiver Side
@@ -194,7 +195,7 @@ This ensures that if the phone reboots during an active SOS, the emergency state
 | `app/.../service/SosTriggerService.kt` | Lightweight foreground service (`specialUse`) with persistent notification. Keeps the main process alive for accelerometer detection and active SOS periodic updates. Started/stopped by `SosTriggerDetector.startObserving()`. |
 | `app/.../receiver/BootReceiver.kt` | `BOOT_COMPLETED` broadcast receiver. Starts `ReticulumService` and `SosTriggerService` on device boot so mesh networking and SOS detection/state resume automatically without user interaction. |
 | `app/.../ui/components/SosOverlay.kt` | Composable for SOS UI states: countdown dialog, sending dialog, active banner (placed in Scaffold `bottomBar` above NavigationBar), and deactivation dialog with optional PIN input. |
-| `app/.../ui/components/AudioMessagePlayer.kt` | Composable audio player for LXMF FIELD_AUDIO messages. Play/pause button, linear progress bar, duration display. Uses `MediaPlayer` with temp file. |
+| `app/.../ui/components/AudioMessagePlayer.kt` | Composable audio player for LXMF FIELD_AUDIO messages. Play/pause button, linear progress bar, duration display, share button (via `FileProvider`). Uses `MediaPlayer` with temp file. |
 | `app/.../service/SosAudioRecorder.kt` | Singleton audio recorder using `MediaRecorder` with AAC codec (16kHz, 24kbps, mono). Start/stop/cancel API, returns audio bytes for LXMF transmission. |
 | `app/.../service/MessageCollector.kt` | Stores SOS GPS positions in `received_locations` table on reception for breadcrumb trail visualization. |
 | `app/.../viewmodel/MapViewModel.kt` | Added `getSosTrailLocations()` to query location history for a sender from Room DB. |

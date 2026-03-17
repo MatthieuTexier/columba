@@ -259,6 +259,7 @@ fun ChatsScreen(
                             ConversationCard(
                                 conversation = conversation,
                                 isSaved = isSaved,
+                                isSos = isSos,
                                 draftText = draftText,
                                 onClick = {
                                     if (pendingSharedText != null) {
@@ -437,6 +438,7 @@ fun ChatsScreen(
 fun ConversationCard(
     conversation: Conversation,
     isSaved: Boolean = false,
+    isSos: Boolean = false,
     draftText: String? = null,
     onClick: () -> Unit = {},
     onLongPress: () -> Unit = {},
@@ -510,6 +512,25 @@ fun ConversationCard(
                                     Modifier
                                         .size(16.dp)
                                         .align(Alignment.Center),
+                            )
+                        }
+                    }
+                    // SOS badge (top-start)
+                    if (isSos) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(20.dp)
+                                    .align(Alignment.TopStart)
+                                    .offset(x = (-4).dp, y = (-4).dp)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = "SOS Contact",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onError,
                             )
                         }
                     }

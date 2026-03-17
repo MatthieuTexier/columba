@@ -186,7 +186,10 @@ class SosManager
             audioRecorder.cancel()
             notificationHelper.cancelNotification(NotificationHelper.NOTIFICATION_ID_SOS)
             _state.value = SosState.Idle
-            scope.launch { settingsRepository.clearSosActiveState() }
+            scope.launch {
+                settingsRepository.clearSosActiveState()
+                sendCancellationMessage()
+            }
             Log.d(TAG, "SOS deactivated")
             return true
         }
@@ -468,6 +471,28 @@ class SosManager
                 Log.e(TAG, "Error loading identity", e)
                 null
             }
+
+        private suspend fun sendCancellationMessage() {
+            try {
+                val contacts = contactRepository.getSosContacts()
+                if (contacts.isEmpty()) return
+                val identity = loadIdentity() ?: return
+                for (contact in contacts) {
+                    try {
+                        reticulumProtocol.sendLxmfMessageWithMethod(
+                            destinationHash = contact.destinationHash.hexToByteArray(),
+                            content = "SOS Cancelled — I am safe.",
+                            sourceIdentity = identity,
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to send cancellation to ${contact.destinationHash.take(8)}", e)
+                    }
+                }
+                Log.d(TAG, "SOS cancellation sent to ${contacts.size} contacts")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending cancellation messages", e)
+            }
+        }
 
         /**
          * Convert a hex string to a ByteArray.
