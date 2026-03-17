@@ -1143,8 +1143,12 @@ fun MapScreen(
             Log.d("MapScreen", "Added focus marker at $focusLatitude, $focusLongitude for $focusLabel")
         }
 
-        // SOS breadcrumb trail - live updates as new positions arrive
-        LaunchedEffect(sosTrailSenderHash, mapStyleLoaded) {
+        // SOS breadcrumb trail - remove when SOS is cancelled
+        val sosTrailActive = sosTrailSenderHash?.let {
+            com.lxmf.messenger.service.SosActiveTracker.isActive(it).collectAsState(initial = true)
+        }
+
+        LaunchedEffect(sosTrailSenderHash, mapStyleLoaded, sosTrailActive?.value) {
             if (!mapStyleLoaded || sosTrailSenderHash == null) return@LaunchedEffect
             val map = mapLibreMap ?: return@LaunchedEffect
             val screenDensity = context.resources.displayMetrics.density
@@ -1153,6 +1157,17 @@ fun MapScreen(
             val trailLayerId = "sos-trail-layer"
             val dotsSourceId = "sos-trail-dots-source"
             val dotsLayerId = "sos-trail-dots-layer"
+
+            // If SOS was cancelled, remove trail layers
+            if (sosTrailActive?.value == false) {
+                val style = map.style ?: return@LaunchedEffect
+                style.removeLayer(trailLayerId)
+                style.removeLayer(dotsLayerId)
+                style.removeSource(trailSourceId)
+                style.removeSource(dotsSourceId)
+                Log.d("MapScreen", "Removed SOS trail for ${sosTrailSenderHash.take(8)} (SOS cancelled)")
+                return@LaunchedEffect
+            }
 
             viewModel.observeSosTrailLocations(sosTrailSenderHash).collect { locations ->
                 if (locations.size < 2) return@collect
