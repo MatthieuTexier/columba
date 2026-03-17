@@ -456,9 +456,6 @@ class SosManagerTest {
         val contact = makeContact("0a0b0c0d0e0f1011")
         coEvery { contactRepository.getSosContacts() } returns listOf(contact)
 
-        val mockLocationManager = mockk<LocationManager>()
-        every { context.getSystemService(Context.LOCATION_SERVICE) } returns mockLocationManager
-
         val mockLocation = mockk<Location>()
         every { mockLocation.latitude } returns 48.8566
         every { mockLocation.longitude } returns 2.3522
@@ -466,7 +463,7 @@ class SosManagerTest {
         every { mockLocation.hasAltitude() } returns false
         every { mockLocation.hasSpeed() } returns false
         every { mockLocation.hasBearing() } returns false
-        every { mockLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } returns mockLocation
+        sosManager.locationProvider = { mockLocation }
 
         sosManager.trigger()
         advanceUntilIdle()
@@ -709,8 +706,6 @@ class SosManagerTest {
         val contact = makeContact("0a0b0c0d0e0f1011")
         coEvery { contactRepository.getSosContacts() } returns listOf(contact)
 
-        val mockLocationManager = mockk<LocationManager>()
-        every { context.getSystemService(Context.LOCATION_SERVICE) } returns mockLocationManager
         val mockLocation = mockk<Location>()
         every { mockLocation.latitude } returns 48.8566
         every { mockLocation.longitude } returns 2.3522
@@ -718,7 +713,7 @@ class SosManagerTest {
         every { mockLocation.hasAltitude() } returns false
         every { mockLocation.hasSpeed() } returns false
         every { mockLocation.hasBearing() } returns false
-        every { mockLocationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } returns mockLocation
+        sosManager.locationProvider = { mockLocation }
 
         val mockBatteryManager = mockk<BatteryManager>()
         every { context.getSystemService(Context.BATTERY_SERVICE) } returns mockBatteryManager

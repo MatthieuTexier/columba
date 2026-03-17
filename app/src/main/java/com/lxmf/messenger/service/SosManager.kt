@@ -72,6 +72,9 @@ class SosManager
             private const val TAG = "SosManager"
         }
 
+        /** Overridable for testing — provides current location. */
+        internal var locationProvider: (suspend () -> Location?)? = null
+
         /** Override in tests to use a test dispatcher. */
         internal var dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Default
 
@@ -410,11 +413,12 @@ class SosManager
         @SuppressLint("MissingPermission")
         private suspend fun getLastKnownLocation(): Location? =
             try {
-                kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-                    com.lxmf.messenger.util.LocationCompat.getCurrentLocation(context) { location ->
-                        cont.resume(location, null)
+                locationProvider?.invoke()
+                    ?: kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                        com.lxmf.messenger.util.LocationCompat.getCurrentLocation(context) { location ->
+                            cont.resume(location, null)
+                        }
                     }
-                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error getting location", e)
                 null

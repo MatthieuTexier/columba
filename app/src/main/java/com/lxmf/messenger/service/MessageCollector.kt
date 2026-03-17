@@ -160,6 +160,26 @@ class MessageCollector
                                 Log.d(TAG, "Cleared SOS active for ${sourceHash.take(16)} (already-persisted)")
                             } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
                                 SosActiveTracker.addSender(sourceHash)
+                                // Store SOS location for breadcrumb trail
+                                val location = notificationHelper.parseSosLocation(receivedMessage.content)
+                                if (location != null) {
+                                    try {
+                                        receivedLocationDao.insert(
+                                            com.lxmf.messenger.data.db.entity.ReceivedLocationEntity(
+                                                id = java.util.UUID.randomUUID().toString(),
+                                                senderHash = sourceHash,
+                                                latitude = location.first,
+                                                longitude = location.second,
+                                                accuracy = 0f,
+                                                timestamp = receivedMessage.timestamp,
+                                                expiresAt = null,
+                                                receivedAt = System.currentTimeMillis(),
+                                            ),
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Failed to store SOS location for trail (already-persisted)", e)
+                                    }
+                                }
                                 Log.d(TAG, "Set SOS active for ${sourceHash.take(16)} (already-persisted)")
                             }
 
