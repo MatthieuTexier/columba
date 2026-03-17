@@ -81,6 +81,7 @@ class IncomingCallActivity : ComponentActivity() {
         if (app?.sosManager?.shouldAutoAnswer() == true) {
             Log.i(TAG, "SOS silent auto-answer: answering call automatically")
             answerCall()
+            currentIdentityHash.value?.let { navigateToActiveCall(it) }
             return
         }
 

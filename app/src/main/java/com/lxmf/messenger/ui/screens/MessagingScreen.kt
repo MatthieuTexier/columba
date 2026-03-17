@@ -2168,6 +2168,7 @@ fun MessageBubble(
                                             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                                             action = NotificationHelper.ACTION_SOS_VIEW_MAP
                                             putExtra(NotificationHelper.EXTRA_PEER_NAME, peerName)
+                                            putExtra(NotificationHelper.EXTRA_DESTINATION_HASH, message.destinationHash)
                                             putExtra("latitude", sosLocation.first)
                                             putExtra("longitude", sosLocation.second)
                                         }
