@@ -3,7 +3,6 @@ package com.lxmf.messenger.service
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
-import android.location.LocationManager
 import android.os.BatteryManager
 import android.util.Log
 import org.json.JSONObject
@@ -409,13 +408,15 @@ class SosManager
         }
 
         @SuppressLint("MissingPermission")
-        private fun getLastKnownLocation(): Location? =
+        private suspend fun getLastKnownLocation(): Location? =
             try {
-                val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                    com.lxmf.messenger.util.LocationCompat.getCurrentLocation(context) { location ->
+                        cont.resume(location, null)
+                    }
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error getting last known location", e)
+                Log.e(TAG, "Error getting location", e)
                 null
             }
 
