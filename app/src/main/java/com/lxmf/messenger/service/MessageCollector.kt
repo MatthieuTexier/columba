@@ -50,6 +50,7 @@ class MessageCollector
         private val contactRepository: ContactRepository,
         private val identityRepository: IdentityRepository,
         private val notificationHelper: NotificationHelper,
+        private val settingsRepository: com.lxmf.messenger.repository.SettingsRepository,
         private val peerIconDao: PeerIconDao,
         private val receivedLocationDao: ReceivedLocationDao,
         private val conversationLinkManager: ConversationLinkManager,
@@ -287,10 +288,10 @@ class MessageCollector
                             // Show notification - SOS messages get urgent treatment
                             try {
                                 if (isSosCancelledMessage(receivedMessage.content)) {
-                                    contactRepository.clearSosActive(sourceHash)
+                                    settingsRepository.removeSosActiveSender(sourceHash)
                                     Log.d(TAG, "Cleared SOS active for ${sourceHash.take(16)}")
                                 } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
-                                    contactRepository.setSosActive(sourceHash)
+                                    settingsRepository.addSosActiveSender(sourceHash)
                                     val location = notificationHelper.parseSosLocation(receivedMessage.content)
                                     notificationHelper.notifySosReceived(
                                         destinationHash = sourceHash,

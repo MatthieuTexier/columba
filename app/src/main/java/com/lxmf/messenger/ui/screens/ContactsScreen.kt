@@ -148,6 +148,7 @@ fun ContactsScreen(
     val hasPendingSharedImages = sharedImagesFromViewModel != null
 
     val contactsState by viewModel.contactsState.collectAsState()
+    val sosActiveSenders by viewModel.sosActiveSenders.collectAsState()
     val contactCount by viewModel.contactCount.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val currentRelayInfo by viewModel.currentRelayInfo.collectAsState()
@@ -500,6 +501,7 @@ fun ContactsScreen(
                                 item(key = "relay_${relay.destinationHash}") {
                                     ContactListItemWithMenu(
                                         contact = relay,
+                                        hasSosActive = sosActiveSenders.contains(relay.destinationHash),
                                         onClick = {
                                             if (relay.status == ContactStatus.PENDING_IDENTITY ||
                                                 relay.status == ContactStatus.UNRESOLVED
@@ -544,6 +546,7 @@ fun ContactsScreen(
                                 ) { contact ->
                                     ContactListItemWithMenu(
                                         contact = contact,
+                                        hasSosActive = sosActiveSenders.contains(contact.destinationHash),
                                         onClick = {
                                             if (contact.status == ContactStatus.PENDING_IDENTITY ||
                                                 contact.status == ContactStatus.UNRESOLVED
@@ -597,6 +600,7 @@ fun ContactsScreen(
                                 ) { contact ->
                                     ContactListItemWithMenu(
                                         contact = contact,
+                                        hasSosActive = sosActiveSenders.contains(contact.destinationHash),
                                         onClick = {
                                             if (contact.status == ContactStatus.PENDING_IDENTITY ||
                                                 contact.status == ContactStatus.UNRESOLVED
@@ -923,6 +927,7 @@ fun ContactsScreen(
 @Composable
 private fun ContactListItemWithMenu(
     contact: EnrichedContact,
+    hasSosActive: Boolean = false,
     onClick: () -> Unit,
     onPinToggle: () -> Unit,
     onEditNickname: () -> Unit,
@@ -948,6 +953,7 @@ private fun ContactListItemWithMenu(
     Box(modifier = Modifier.fillMaxWidth()) {
         ContactListItem(
             contact = contact,
+            hasSosActive = hasSosActive,
             onClick = onClick,
             onPinClick = onPinToggle,
             onLongPress = {
@@ -996,6 +1002,7 @@ private fun ContactListItemWithMenu(
 @Composable
 fun ContactListItem(
     contact: EnrichedContact,
+    hasSosActive: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onPinClick: () -> Unit,
@@ -1018,14 +1025,14 @@ fun ContactListItem(
                     onLongClick = onLongPress,
                 ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (contact.hasSosActive) {
+        border = if (hasSosActive) {
             androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.error)
         } else {
             null
         },
         colors =
             CardDefaults.cardColors(
-                containerColor = if (contact.hasSosActive) {
+                containerColor = if (hasSosActive) {
                     MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant

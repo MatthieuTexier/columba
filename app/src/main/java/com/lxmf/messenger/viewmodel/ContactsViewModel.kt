@@ -82,6 +82,7 @@ class ContactsViewModel
         private val propagationNodeManager: PropagationNodeManager,
         private val receivedLocationRepository: ReceivedLocationRepository,
         private val identityResolutionManager: IdentityResolutionManager,
+        private val settingsRepository: com.lxmf.messenger.repository.SettingsRepository,
     ) : ViewModel() {
         companion object {
             private const val TAG = "ContactsViewModel"
@@ -326,6 +327,14 @@ class ContactsViewModel
                 }
             }
         }
+
+        val sosActiveSenders: StateFlow<Set<String>> =
+            settingsRepository.sosActiveSenders
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = emptySet(),
+                )
 
         /**
          * Toggle SOS tag for a contact
