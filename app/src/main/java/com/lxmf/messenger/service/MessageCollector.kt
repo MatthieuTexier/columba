@@ -12,6 +12,7 @@ import com.lxmf.messenger.data.repository.ContactRepository
 import com.lxmf.messenger.data.repository.ConversationRepository
 import com.lxmf.messenger.data.repository.IdentityRepository
 import com.lxmf.messenger.notifications.NotificationHelper
+import com.lxmf.messenger.notifications.isSosCancelledMessage
 import com.lxmf.messenger.reticulum.protocol.ReticulumProtocol
 import com.lxmf.messenger.service.util.PeerNameResolver
 import kotlinx.coroutines.CoroutineScope
@@ -285,7 +286,7 @@ class MessageCollector
 
                             // Show notification - SOS messages get urgent treatment
                             try {
-                                if (notificationHelper.isSosCancelledMessage(receivedMessage.content)) {
+                                if (isSosCancelledMessage(receivedMessage.content)) {
                                     contactRepository.clearSosActive(sourceHash)
                                     Log.d(TAG, "Cleared SOS active for ${sourceHash.take(16)}")
                                 } else if (notificationHelper.isSosMessage(receivedMessage.content)) {

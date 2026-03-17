@@ -586,14 +586,6 @@ class NotificationHelper
         }
 
         /**
-         * Check if a message is an SOS cancellation.
-         */
-        fun isSosCancelledMessage(content: String): Boolean {
-            val upper = content.uppercase().trimStart()
-            return upper.startsWith("SOS CANCELLED") || upper.startsWith("SOS CANCELED")
-        }
-
-        /**
          * Parse GPS coordinates from an SOS message.
          */
         fun parseSosLocation(content: String): Pair<Double, Double>? {
@@ -608,3 +600,11 @@ class NotificationHelper
             }
         }
     }
+
+/**
+ * Check if a message is an SOS cancellation. Top-level to avoid TooManyFunctions in NotificationHelper.
+ */
+fun isSosCancelledMessage(content: String): Boolean {
+    val upper = content.uppercase().trimStart()
+    return upper.startsWith("SOS CANCELLED") || upper.startsWith("SOS CANCELED")
+}
