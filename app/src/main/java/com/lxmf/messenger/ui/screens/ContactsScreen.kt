@@ -1018,9 +1018,18 @@ fun ContactListItem(
                     onLongClick = onLongPress,
                 ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = if (contact.hasSosActive) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.error)
+        } else {
+            null
+        },
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                containerColor = if (contact.hasSosActive) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
             ),
     ) {
         Row(

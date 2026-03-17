@@ -241,6 +241,7 @@ fun ChatsScreen(
                         var showMenu by remember { mutableStateOf(false) }
                         val isSaved by viewModel.isContactSaved(conversation.peerHash).collectAsState()
                         val isSos by viewModel.isSosContact(conversation.peerHash).collectAsState()
+                        val hasSosActive by viewModel.hasSosActive(conversation.peerHash).collectAsState()
                         var contactLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
                         // Fetch contact location when menu opens; clear on close
@@ -260,6 +261,7 @@ fun ChatsScreen(
                                 conversation = conversation,
                                 isSaved = isSaved,
                                 isSos = isSos,
+                                hasSosActive = hasSosActive,
                                 draftText = draftText,
                                 onClick = {
                                     if (pendingSharedText != null) {
@@ -439,6 +441,7 @@ fun ConversationCard(
     conversation: Conversation,
     isSaved: Boolean = false,
     isSos: Boolean = false,
+    hasSosActive: Boolean = false,
     draftText: String? = null,
     onClick: () -> Unit = {},
     onLongPress: () -> Unit = {},
@@ -454,9 +457,18 @@ fun ConversationCard(
                 ),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = if (hasSosActive) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.error)
+        } else {
+            null
+        },
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                containerColor = if (hasSosActive) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
             ),
     ) {
         Box {

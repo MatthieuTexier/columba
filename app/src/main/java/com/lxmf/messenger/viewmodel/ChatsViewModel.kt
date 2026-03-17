@@ -263,6 +263,22 @@ class ChatsViewModel
                     )
             }
 
+        private val sosActiveCacheFlows = mutableMapOf<String, StateFlow<Boolean>>()
+
+        /**
+         * Check if a peer has an active SOS emergency (receiver side).
+         */
+        fun hasSosActive(peerHash: String): StateFlow<Boolean> =
+            sosActiveCacheFlows.getOrPut(peerHash) {
+                contactRepository
+                    .hasSosActiveFlow(peerHash)
+                    .stateIn(
+                        scope = viewModelScope,
+                        started = SharingStarted.WhileSubscribed(5000),
+                        initialValue = false,
+                    )
+            }
+
         /**
          * Toggle SOS tag for a contact.
          */

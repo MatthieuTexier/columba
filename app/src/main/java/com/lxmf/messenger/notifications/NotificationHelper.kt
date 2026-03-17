@@ -578,10 +578,19 @@ class NotificationHelper
          */
         fun isSosMessage(content: String): Boolean {
             val upper = content.uppercase().trimStart()
-            return upper.startsWith("SOS") ||
+            return (upper.startsWith("SOS") ||
                 upper.startsWith("URGENCE") ||
                 upper.startsWith("EMERGENCY") ||
-                upper.contains("SOS UPDATE - GPS:")
+                upper.contains("SOS UPDATE - GPS:")) &&
+                !isSosCancelledMessage(content)
+        }
+
+        /**
+         * Check if a message is an SOS cancellation.
+         */
+        fun isSosCancelledMessage(content: String): Boolean {
+            val upper = content.uppercase().trimStart()
+            return upper.startsWith("SOS CANCELLED") || upper.startsWith("SOS CANCELED")
         }
 
         /**

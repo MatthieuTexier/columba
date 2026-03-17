@@ -285,7 +285,11 @@ class MessageCollector
 
                             // Show notification - SOS messages get urgent treatment
                             try {
-                                if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                if (notificationHelper.isSosCancelledMessage(receivedMessage.content)) {
+                                    contactRepository.clearSosActive(sourceHash)
+                                    Log.d(TAG, "Cleared SOS active for ${sourceHash.take(16)}")
+                                } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                    contactRepository.setSosActive(sourceHash)
                                     val location = notificationHelper.parseSosLocation(receivedMessage.content)
                                     notificationHelper.notifySosReceived(
                                         destinationHash = sourceHash,
