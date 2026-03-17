@@ -46,7 +46,7 @@ class ChatsViewModel
         private val propagationNodeManager: PropagationNodeManager,
         private val receivedLocationRepository: ReceivedLocationRepository,
         private val identityResolutionManager: IdentityResolutionManager,
-        private val settingsRepository: com.lxmf.messenger.repository.SettingsRepository,
+        private val sosActiveTracker: com.lxmf.messenger.service.SosActiveTracker,
     ) : ViewModel() {
         companion object {
             private const val TAG = "ChatsViewModel"
@@ -271,8 +271,7 @@ class ChatsViewModel
          */
         fun hasSosActive(peerHash: String): StateFlow<Boolean> =
             sosActiveCacheFlows.getOrPut(peerHash) {
-                settingsRepository.sosActiveSenders
-                    .map { it.contains(peerHash) }
+                sosActiveTracker.isActive(peerHash)
                     .stateIn(
                         scope = viewModelScope,
                         started = SharingStarted.WhileSubscribed(5000),
