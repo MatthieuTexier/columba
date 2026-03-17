@@ -1018,6 +1018,7 @@ class ChatsScreenTest {
         // Default: contacts are not saved, not SOS
         every { mockViewModel.isContactSaved(any()) } returns MutableStateFlow(false)
         every { mockViewModel.isSosContact(any()) } returns MutableStateFlow(false)
+        every { mockViewModel.hasSosActive(any()) } returns MutableStateFlow(false)
 
         return mockViewModel
     }
