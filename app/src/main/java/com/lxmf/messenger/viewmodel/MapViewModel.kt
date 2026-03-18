@@ -660,4 +660,11 @@ class MapViewModel
             senderHash: String,
         ): kotlinx.coroutines.flow.Flow<List<com.lxmf.messenger.data.db.entity.ReceivedLocationEntity>> =
             receivedLocationDao.getLocationsForSender(senderHash, limit = 200)
+
+        fun clearSosTrail(senderHash: String) {
+            viewModelScope.launch {
+                receivedLocationDao.deleteLocationsForSender(senderHash)
+                Log.d("MapViewModel", "Cleared SOS trail for ${senderHash.take(8)}")
+            }
+        }
     }

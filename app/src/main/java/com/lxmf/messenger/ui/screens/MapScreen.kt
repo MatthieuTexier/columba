@@ -1143,35 +1143,34 @@ fun MapScreen(
             Log.d("MapScreen", "Added focus marker at $focusLatitude, $focusLongitude for $focusLabel")
         }
 
-        // SOS breadcrumb trail - remove when SOS is cancelled
-        val sosTrailActive = sosTrailSenderHash?.let {
-            com.lxmf.messenger.service.SosActiveTracker.isActive(it).collectAsState(initial = true)
+        // SOS breadcrumb trail - live updates
+        val sosTrailLocations = sosTrailSenderHash?.let {
+            viewModel.observeSosTrailLocations(it).collectAsState(initial = emptyList())
         }
 
-        LaunchedEffect(sosTrailSenderHash, mapStyleLoaded, sosTrailActive?.value) {
+        LaunchedEffect(sosTrailSenderHash, mapStyleLoaded, sosTrailLocations?.value) {
             if (!mapStyleLoaded || sosTrailSenderHash == null) return@LaunchedEffect
             val map = mapLibreMap ?: return@LaunchedEffect
             val screenDensity = context.resources.displayMetrics.density
+            val locations = sosTrailLocations?.value ?: return@LaunchedEffect
 
             val trailSourceId = "sos-trail-source"
             val trailLayerId = "sos-trail-layer"
             val dotsSourceId = "sos-trail-dots-source"
             val dotsLayerId = "sos-trail-dots-layer"
 
-            // If SOS was cancelled, remove trail layers
-            if (sosTrailActive?.value == false) {
+            // If no locations (cleared), remove trail layers
+            if (locations.size < 2) {
                 val style = map.style ?: return@LaunchedEffect
                 style.removeLayer(trailLayerId)
                 style.removeLayer(dotsLayerId)
                 style.removeSource(trailSourceId)
                 style.removeSource(dotsSourceId)
-                Log.d("MapScreen", "Removed SOS trail for ${sosTrailSenderHash.take(8)} (SOS cancelled)")
                 return@LaunchedEffect
             }
 
-            viewModel.observeSosTrailLocations(sosTrailSenderHash).collect { locations ->
-                if (locations.size < 2) return@collect
-                val style = map.style ?: return@collect
+            run {
+                val style = map.style ?: return@run
 
                 val sortedLocations = locations.sortedBy { it.timestamp }
                 val points = sortedLocations.map { Point.fromLngLat(it.longitude, it.latitude) }
@@ -1296,6 +1295,17 @@ fun MapScreen(
                     // Account for bottom navigation bar
                     .padding(bottom = 80.dp),
         ) {
+            // Clear SOS Trail button (only when trail is visible)
+            if (sosTrailSenderHash != null && (sosTrailLocations?.value?.size ?: 0) >= 2) {
+                SmallFloatingActionButton(
+                    onClick = { viewModel.clearSosTrail(sosTrailSenderHash) },
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear SOS Trail")
+                }
+            }
+
             // Offline Maps button
             SmallFloatingActionButton(
                 onClick = onNavigateToOfflineMaps,
