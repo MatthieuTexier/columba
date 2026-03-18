@@ -72,6 +72,7 @@ fun AudioMessagePlayer(
                 }
             } catch (e: Exception) {
                 Log.e("AudioMessagePlayer", "Failed to prepare player", e)
+                mp.release()
             }
         }
     }

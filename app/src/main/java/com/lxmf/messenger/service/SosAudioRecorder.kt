@@ -72,6 +72,7 @@ class SosAudioRecorder
                             MediaRecorder()
                         }
 
+                    recorder = mr
                     mr.apply {
                         setAudioSource(MediaRecorder.AudioSource.MIC)
                         setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -83,8 +84,6 @@ class SosAudioRecorder
                         prepare()
                         start()
                     }
-
-                    recorder = mr
                     Log.d(TAG, "Audio recording started: ${file.absolutePath}")
                     true
                 } catch (e: Exception) {
