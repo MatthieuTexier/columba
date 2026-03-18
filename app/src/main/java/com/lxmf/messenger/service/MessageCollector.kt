@@ -172,7 +172,7 @@ class MessageCollector
                                                 longitude = location.second,
                                                 accuracy = 0f,
                                                 timestamp = receivedMessage.timestamp,
-                                                expiresAt = null,
+                                                expiresAt = -1L,
                                                 receivedAt = System.currentTimeMillis(),
                                             ),
                                         )
@@ -350,7 +350,7 @@ class MessageCollector
                                                     longitude = location.second,
                                                     accuracy = 0f,
                                                     timestamp = receivedMessage.timestamp,
-                                                    expiresAt = null,
+                                                    expiresAt = -1L,
                                                     receivedAt = System.currentTimeMillis(),
                                                 ),
                                             )
