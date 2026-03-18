@@ -240,7 +240,6 @@ class SosTriggerDetector
                     ) { enabled, modes, _, _, sosState ->
                         Triple(enabled, modes, sosState !is SosState.Idle)
                     }
-                        .distinctUntilChanged()
                         .collect { (enabled, modes, sosActive) ->
                             val triggerNeeded = enabled && modes.isNotEmpty()
 
