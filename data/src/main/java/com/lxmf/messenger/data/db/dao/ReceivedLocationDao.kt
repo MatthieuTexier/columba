@@ -110,12 +110,12 @@ interface ReceivedLocationDao {
     suspend fun deleteExpiredLocations(gracePeriodCutoff: Long = System.currentTimeMillis() - 3600_000L)
 
     /**
-     * Get SOS trail locations for a sender (expiresAt = -1 marks SOS positions).
+     * Get SOS trail locations for a sender.
      */
     @Query(
         """
         SELECT * FROM received_locations
-        WHERE senderHash = :senderHash AND expiresAt = -1
+        WHERE senderHash = :senderHash AND source = 'sos_trail'
         ORDER BY timestamp DESC
         LIMIT :limit
         """,
@@ -132,10 +132,10 @@ interface ReceivedLocationDao {
     suspend fun deleteLocationsForSender(senderHash: String)
 
     /**
-     * Delete only SOS trail locations for a sender (expiresAt = -1).
+     * Delete only SOS trail locations for a sender.
      * Preserves location sharing positions.
      */
-    @Query("DELETE FROM received_locations WHERE senderHash = :senderHash AND expiresAt = -1")
+    @Query("DELETE FROM received_locations WHERE senderHash = :senderHash AND source = 'sos_trail'")
     suspend fun deleteSosTrailForSender(senderHash: String)
 
     /**

@@ -172,7 +172,8 @@ class MessageCollector
                                                 longitude = location.second,
                                                 accuracy = 0f,
                                                 timestamp = receivedMessage.timestamp,
-                                                expiresAt = -1L,
+                                                expiresAt = null,
+                                                source = ReceivedLocationEntity.SOURCE_SOS_TRAIL,
                                                 receivedAt = System.currentTimeMillis(),
                                             ),
                                         )
@@ -350,7 +351,8 @@ class MessageCollector
                                                     longitude = location.second,
                                                     accuracy = 0f,
                                                     timestamp = receivedMessage.timestamp,
-                                                    expiresAt = -1L,
+                                                    expiresAt = null,
+                                                source = ReceivedLocationEntity.SOURCE_SOS_TRAIL,
                                                     receivedAt = System.currentTimeMillis(),
                                                 ),
                                             )
