@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -240,8 +241,10 @@ class SosManager
         }
 
         private suspend fun startCountdown(totalSeconds: Int) {
-            countdownJob =
-                scope.launch {
+            // Use coroutineScope so countdown is a child of the caller (triggerJob).
+            // Cancelling triggerJob in forceDeactivate() will also cancel the countdown.
+            coroutineScope {
+                countdownJob = launch {
                     try {
                         for (remaining in totalSeconds downTo 1) {
                             _state.value = SosState.Countdown(remaining, totalSeconds)
@@ -256,6 +259,7 @@ class SosManager
                         _state.value = SosState.Idle
                     }
                 }
+            }
         }
 
         @SuppressLint("MissingPermission")
