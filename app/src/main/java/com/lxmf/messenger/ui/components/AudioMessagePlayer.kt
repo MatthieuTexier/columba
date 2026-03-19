@@ -54,6 +54,11 @@ fun AudioMessagePlayer(
     var tempFile by remember { mutableStateOf<File?>(null) }
 
     LaunchedEffect(audioBytes) {
+        // Release any previous player before creating a new one
+        withContext(Dispatchers.Main) {
+            player?.release()
+            player = null
+        }
         withContext(Dispatchers.IO) {
             val file = File(context.cacheDir, "audio_playback_${audioBytes.contentHashCode()}.m4a")
             file.writeBytes(audioBytes)
