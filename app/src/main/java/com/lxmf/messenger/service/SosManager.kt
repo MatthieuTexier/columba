@@ -265,6 +265,7 @@ class SosManager
 
         @SuppressLint("MissingPermission")
         private suspend fun sendSosMessages() {
+            kotlin.coroutines.coroutineContext.ensureActive() // Honour pending cancellation before touching state
             _state.value = SosState.Sending
 
             val template = settingsRepository.sosMessageTemplate.first()
