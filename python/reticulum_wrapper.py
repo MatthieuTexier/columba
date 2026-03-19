@@ -82,6 +82,7 @@ LEGACY_LOCATION_FIELD = 7     # Legacy field ID for backwards compatibility
 
 # Command IDs for FIELD_COMMANDS (Sideband telemetry collector protocol)
 COMMAND_TELEMETRY_REQUEST = 0x01  # Request telemetry from collector
+COMMAND_SOS_STATE = 0x02          # SOS emergency state: ["active"], ["cancelled"], ["update"]
 
 # Sensor IDs (from Sideband sense.py)
 SID_TIME = 0x01
@@ -3349,6 +3350,13 @@ class ReticulumWrapper:
                                     fields_serialized["7"] = ["m4a", None, temp_path]
                                 else:
                                     fields_serialized["7"] = ["m4a", value.hex()]
+                            elif key == FIELD_COMMANDS and isinstance(value, list):
+                                # Field 9: commands — extract SOS state for Kotlin
+                                for cmd in value:
+                                    if isinstance(cmd, dict) and COMMAND_SOS_STATE in cmd:
+                                        args = cmd[COMMAND_SOS_STATE]
+                                        if isinstance(args, list) and len(args) > 0:
+                                            fields_serialized["sos_state"] = str(args[0])
                             else:
                                 fields_serialized[str(key)] = str(value)
                         if fields_serialized:
@@ -4409,7 +4417,8 @@ class ReticulumWrapper:
                                        reply_to_message_id: str = None,
                                        icon_name: str = None, icon_fg_color: str = None, icon_bg_color: str = None,
                                        telemetry_json: str = None,
-                                       audio_data: bytes = None, audio_data_path: str = None) -> Dict:
+                                       audio_data: bytes = None, audio_data_path: str = None,
+                                       sos_state: str = None) -> Dict:
         """
         Send an LXMF message with explicit delivery method.
 
@@ -4704,6 +4713,18 @@ class ReticulumWrapper:
                 fields[FIELD_AUDIO] = ["m4a", audio_data]
                 log_info("ReticulumWrapper", "send_lxmf_message_with_method",
                         f"🎙️ Attaching audio: {len(audio_data)} bytes, format=m4a, field_key={FIELD_AUDIO}")
+
+            # Add FIELD_COMMANDS for SOS state if provided
+            if sos_state:
+                if fields is None:
+                    fields = {}
+                sos_command = [{COMMAND_SOS_STATE: [str(sos_state)]}]
+                if FIELD_COMMANDS in fields:
+                    fields[FIELD_COMMANDS].extend(sos_command)
+                else:
+                    fields[FIELD_COMMANDS] = sos_command
+                log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                        f"🆘 Adding FIELD_COMMANDS SOS state: {sos_state}")
 
             # Create LXMF message with specified delivery method
             lxmf_message = LXMF.LXMessage(

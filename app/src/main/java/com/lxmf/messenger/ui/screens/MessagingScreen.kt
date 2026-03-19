@@ -161,6 +161,7 @@ import coil.request.ImageRequest
 import com.lxmf.messenger.MainActivity
 import com.lxmf.messenger.R
 import com.lxmf.messenger.notifications.NotificationHelper
+import com.lxmf.messenger.notifications.isSosMessageByField
 import com.lxmf.messenger.service.SyncProgress
 import com.lxmf.messenger.service.SyncResult
 import com.lxmf.messenger.ui.components.AttachmentPanel
@@ -1889,7 +1890,7 @@ fun MessageBubble(
             }
         } else {
             // Detect SOS messages from others
-            val isSosMessage = !isFromMe && isSosMessageContent(message.content)
+            val isSosMessage = !isFromMe && isSosMessageByField(message.content, message.fieldsJson)
 
             // Regular message with bubble
             Box {
@@ -2619,17 +2620,6 @@ fun EmptyMessagesState() {
 }
 
 private enum class InputPanelMode { NONE, KEYBOARD, PANEL }
-
-private fun isSosMessageContent(content: String): Boolean {
-    val upper = content.uppercase().trimStart()
-    return (
-        upper.startsWith("SOS") ||
-            upper.startsWith("URGENCE") ||
-            upper.startsWith("EMERGENCY")
-    ) &&
-        !upper.startsWith("SOS CANCELLED") &&
-        !upper.startsWith("SOS CANCELED")
-}
 
 private fun parseSosGpsLocation(content: String): Pair<Double, Double>? {
     val regex = Regex("""GPS:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)""")

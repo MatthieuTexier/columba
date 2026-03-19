@@ -838,6 +838,7 @@ class ReticulumServiceBinder(
         telemetryJson: String?,
         audioData: ByteArray?,
         audioDataPath: String?,
+        sosState: String?,
     ): String =
         try {
             wrapperManager.withWrapper { wrapper ->
@@ -874,6 +875,7 @@ class ReticulumServiceBinder(
                         telemetryJson,
                         audioData,
                         audioDataPath,
+                        sosState,
                     )
                 // Use PythonResultConverter to properly convert Python dict to JSON
                 // (bytes values like message_hash need Base64 encoding)

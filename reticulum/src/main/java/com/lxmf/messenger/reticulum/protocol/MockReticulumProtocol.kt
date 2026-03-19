@@ -365,6 +365,7 @@ class MockReticulumProtocol : ReticulumProtocol {
         iconAppearance: IconAppearance?,
         telemetryJson: String?,
         audioData: ByteArray?,
+        sosState: String?,
     ): Result<MessageReceipt> {
         // Mock implementation - same as sendLxmfMessage
         return Result.success(

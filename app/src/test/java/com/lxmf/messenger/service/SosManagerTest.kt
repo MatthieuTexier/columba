@@ -100,7 +100,7 @@ class SosManagerTest {
         // Default sendLxmfMessageWithMethod mock
         coEvery {
             reticulumProtocol.sendLxmfMessageWithMethod(
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
             )
         } returns Result.success(mockReceipt)
 
@@ -304,7 +304,7 @@ class SosManagerTest {
                                 .map { b -> b.toInt(16).toByte() }.toByteArray(),
                         )
                     },
-                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
                 )
             } returns Result.failure(RuntimeException("Network error"))
 
@@ -507,6 +507,8 @@ class SosManagerTest {
                     replyToMessageId = any(),
                     iconAppearance = any(),
                     telemetryJson = any(),
+                    audioData = any(),
+                    sosState = any(),
                 )
             }
         }
@@ -539,6 +541,8 @@ class SosManagerTest {
                     replyToMessageId = any(),
                     iconAppearance = any(),
                     telemetryJson = any(),
+                    audioData = any(),
+                    sosState = any(),
                 )
             }
         }
@@ -664,7 +668,7 @@ class SosManagerTest {
                                 .map { b -> b.toInt(16).toByte() }.toByteArray(),
                         )
                     },
-                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                    any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(),
                 )
             } returns Result.failure(RuntimeException("Network error"))
 
@@ -727,6 +731,8 @@ class SosManagerTest {
                     replyToMessageId = any(),
                     iconAppearance = any(),
                     telemetryJson = any(),
+                    audioData = any(),
+                    sosState = any(),
                 )
             }
         }
@@ -777,6 +783,8 @@ class SosManagerTest {
                     replyToMessageId = any(),
                     iconAppearance = any(),
                     telemetryJson = any(),
+                    audioData = any(),
+                    sosState = any(),
                 )
             }
         }

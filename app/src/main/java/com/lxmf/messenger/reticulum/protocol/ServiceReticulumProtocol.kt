@@ -2232,6 +2232,7 @@ class ServiceReticulumProtocol(
         iconAppearance: IconAppearance?,
         telemetryJson: String?,
         audioData: ByteArray?,
+        sosState: String?,
     ): Result<MessageReceipt> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -2317,6 +2318,7 @@ class ServiceReticulumProtocol(
                         telemetryJson,
                         smallAudioData,
                         audioDataPath,
+                        sosState,
                     )
                 val result = JSONObject(resultJson)
 

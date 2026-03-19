@@ -12,8 +12,9 @@ import com.lxmf.messenger.data.repository.ContactRepository
 import com.lxmf.messenger.data.repository.ConversationRepository
 import com.lxmf.messenger.data.repository.IdentityRepository
 import com.lxmf.messenger.notifications.NotificationHelper
-import com.lxmf.messenger.notifications.isSosCancelledMessage
-import com.lxmf.messenger.notifications.isSosUpdate
+import com.lxmf.messenger.notifications.isSosCancelledByField
+import com.lxmf.messenger.notifications.isSosMessageByField
+import com.lxmf.messenger.notifications.isSosUpdateByField
 import com.lxmf.messenger.reticulum.protocol.ReticulumProtocol
 import com.lxmf.messenger.service.util.PeerNameResolver
 import kotlinx.coroutines.CoroutineScope
@@ -156,13 +157,15 @@ class MessageCollector
                                 }
 
                             // Track SOS active state (works for both new and already-persisted messages)
-                            if (isSosCancelledMessage(receivedMessage.content)) {
+                            // Primary: check FIELD_COMMANDS sos_state in fieldsJson; Fallback: text-based
+                            val fieldsJson = receivedMessage.fieldsJson
+                            if (isSosCancelledByField(receivedMessage.content, fieldsJson)) {
                                 SosActiveTracker.removeSender(sourceHash)
                                 notificationHelper.cancelNotification(
                                     NotificationHelper.NOTIFICATION_ID_SOS + (sourceHash.hashCode() and 0x7FFFFFFF),
                                 )
                                 Log.d(TAG, "Cleared SOS active and notification for ${sourceHash.take(16)} (already-persisted)")
-                            } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                            } else if (isSosMessageByField(receivedMessage.content, fieldsJson)) {
                                 SosActiveTracker.addSender(sourceHash)
                                 Log.d(TAG, "Set SOS active for ${sourceHash.take(16)} (already-persisted)")
                             }
@@ -173,7 +176,7 @@ class MessageCollector
                             // for messages the user has already seen
                             if (!existingMessage.isRead) {
                                 // Store SOS trail location (only for unread = first processing)
-                                if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                if (isSosMessageByField(receivedMessage.content, fieldsJson)) {
                                     val trailLocation = notificationHelper.parseSosLocation(receivedMessage.content)
                                     if (trailLocation != null) {
                                         try {
@@ -196,7 +199,7 @@ class MessageCollector
                                     }
                                 }
                                 try {
-                                    if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                    if (isSosMessageByField(receivedMessage.content, fieldsJson)) {
                                         val location = notificationHelper.parseSosLocation(receivedMessage.content)
                                         notificationHelper.notifySosReceived(
                                             destinationHash = sourceHash,
@@ -204,7 +207,7 @@ class MessageCollector
                                             messageContent = receivedMessage.content,
                                             latitude = location?.first,
                                             longitude = location?.second,
-                                            isUpdate = isSosUpdate(receivedMessage.content),
+                                            isUpdate = isSosUpdateByField(receivedMessage.content, fieldsJson),
                                         )
                                     } else {
                                         notificationHelper.notifyMessageReceived(
@@ -335,13 +338,14 @@ class MessageCollector
 
                             // Show notification - SOS messages get urgent treatment
                             try {
-                                if (isSosCancelledMessage(receivedMessage.content)) {
+                                val newFieldsJson = receivedMessage.fieldsJson
+                                if (isSosCancelledByField(receivedMessage.content, newFieldsJson)) {
                                     SosActiveTracker.removeSender(sourceHash)
                                     notificationHelper.cancelNotification(
                                         NotificationHelper.NOTIFICATION_ID_SOS + (sourceHash.hashCode() and 0x7FFFFFFF),
                                     )
                                     Log.d(TAG, "Cleared SOS active and notification for ${sourceHash.take(16)}")
-                                } else if (notificationHelper.isSosMessage(receivedMessage.content)) {
+                                } else if (isSosMessageByField(receivedMessage.content, newFieldsJson)) {
                                     SosActiveTracker.addSender(sourceHash)
                                     val location = notificationHelper.parseSosLocation(receivedMessage.content)
                                     notificationHelper.notifySosReceived(
@@ -350,7 +354,7 @@ class MessageCollector
                                         messageContent = receivedMessage.content,
                                         latitude = location?.first,
                                         longitude = location?.second,
-                                        isUpdate = isSosUpdate(receivedMessage.content),
+                                        isUpdate = isSosUpdateByField(receivedMessage.content, newFieldsJson),
                                     )
                                     // Store SOS location for breadcrumb trail
                                     if (location != null) {

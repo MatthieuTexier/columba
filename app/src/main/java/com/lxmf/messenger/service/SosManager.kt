@@ -16,13 +16,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -244,21 +244,22 @@ class SosManager
             // Use coroutineScope so countdown is a child of the caller (triggerJob).
             // Cancelling triggerJob in forceDeactivate() will also cancel the countdown.
             coroutineScope {
-                countdownJob = launch {
-                    try {
-                        for (remaining in totalSeconds downTo 1) {
-                            _state.value = SosState.Countdown(remaining, totalSeconds)
-                            delay(1_000L)
+                countdownJob =
+                    launch {
+                        try {
+                            for (remaining in totalSeconds downTo 1) {
+                                _state.value = SosState.Countdown(remaining, totalSeconds)
+                                delay(1_000L)
+                            }
+                            sendSosMessages()
+                        } catch (e: CancellationException) {
+                            Log.d(TAG, "Countdown coroutine cancelled")
+                            throw e
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error during countdown/send", e)
+                            _state.value = SosState.Idle
                         }
-                        sendSosMessages()
-                    } catch (e: CancellationException) {
-                        Log.d(TAG, "Countdown coroutine cancelled")
-                        throw e
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error during countdown/send", e)
-                        _state.value = SosState.Idle
                     }
-                }
             }
         }
 
@@ -315,6 +316,7 @@ class SosManager
                             content = messageContent,
                             sourceIdentity = identity,
                             telemetryJson = telemetryJson,
+                            sosState = "active",
                         )
                     if (result.isSuccess) {
                         sentCount++
@@ -403,6 +405,7 @@ class SosManager
                                     content = updateMessage,
                                     sourceIdentity = identity,
                                     telemetryJson = updateTelemetry,
+                                    sosState = "update",
                                 )
                             } catch (e: Exception) {
                                 ensureActive()
@@ -447,6 +450,7 @@ class SosManager
                                 content = "Audio from SOS alert",
                                 sourceIdentity = identity,
                                 audioData = audioBytes,
+                                sosState = "active",
                             )
                         } catch (e: Exception) {
                             ensureActive()
@@ -538,6 +542,7 @@ class SosManager
                             destinationHash = contact.destinationHash.hexToByteArray(),
                             content = "SOS Cancelled — I am safe.",
                             sourceIdentity = identity,
+                            sosState = "cancelled",
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to send cancellation to ${contact.destinationHash.take(8)}", e)

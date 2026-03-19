@@ -316,6 +316,7 @@ interface ReticulumProtocol {
         iconAppearance: IconAppearance? = null,
         telemetryJson: String? = null,
         audioData: ByteArray? = null,
+        sosState: String? = null,
     ): Result<MessageReceipt>
 
     /**

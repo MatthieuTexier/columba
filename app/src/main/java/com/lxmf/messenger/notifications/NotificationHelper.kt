@@ -632,3 +632,47 @@ fun isSosCancelledMessage(content: String): Boolean {
     val upper = content.uppercase().trimStart()
     return upper.startsWith("SOS CANCELLED") || upper.startsWith("SOS CANCELED")
 }
+
+/** Extract SOS state from fieldsJson FIELD_COMMANDS. Returns "active", "cancelled", "update", or null. */
+fun extractSosState(fieldsJson: String?): String? {
+    if (fieldsJson == null) return null
+    return try {
+        val fields = org.json.JSONObject(fieldsJson)
+        fields.optString("sos_state").ifEmpty { null }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/** Check if a message is SOS using FIELD_COMMANDS (primary) or text content (fallback). */
+fun isSosMessageByField(
+    content: String,
+    fieldsJson: String?,
+): Boolean {
+    val sosState = extractSosState(fieldsJson)
+    if (sosState != null) return sosState == "active" || sosState == "update"
+    // Text-based fallback for Sideband/legacy compatibility
+    val upper = content.uppercase().trimStart()
+    return (upper.startsWith("SOS") || upper.startsWith("URGENCE") || upper.startsWith("EMERGENCY")) &&
+        !isSosCancelledMessage(content)
+}
+
+/** Check if a message is SOS cancellation using FIELD_COMMANDS (primary) or text content (fallback). */
+fun isSosCancelledByField(
+    content: String,
+    fieldsJson: String?,
+): Boolean {
+    val sosState = extractSosState(fieldsJson)
+    if (sosState != null) return sosState == "cancelled"
+    return isSosCancelledMessage(content)
+}
+
+/** Check if a message is SOS update using FIELD_COMMANDS (primary) or text content (fallback). */
+fun isSosUpdateByField(
+    content: String,
+    fieldsJson: String?,
+): Boolean {
+    val sosState = extractSosState(fieldsJson)
+    if (sosState != null) return sosState == "update"
+    return isSosUpdate(content)
+}
