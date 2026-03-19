@@ -278,7 +278,7 @@ class SosManager
                 buildString {
                     append(template)
                     location?.let {
-                        append("\nGPS: ${it.latitude}, ${it.longitude}")
+                        append("\nGPS: ${"%.6f".format(it.latitude)}, ${"%.6f".format(it.longitude)}")
                         append(" (accuracy: ${it.accuracy.toInt()}m)")
                     }
                     batteryLevel?.let { level ->
@@ -387,7 +387,7 @@ class SosManager
                             buildString {
                                 append("SOS Update")
                                 updateLocation?.let { loc ->
-                                    append(" - GPS: ${loc.latitude}, ${loc.longitude}")
+                                    append(" - GPS: ${"%.6f".format(loc.latitude)}, ${"%.6f".format(loc.longitude)}")
                                     append(" (accuracy: ${loc.accuracy.toInt()}m)")
                                 }
                                 updateBattery?.let { level ->

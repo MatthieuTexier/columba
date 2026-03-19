@@ -1163,10 +1163,10 @@ fun MapScreen(
             // If no locations (cleared), remove trail layers
             if (locations.size < 2) {
                 val style = map.style ?: return@LaunchedEffect
-                style.removeLayer(trailLayerId)
-                style.removeLayer(dotsLayerId)
-                style.removeSource(trailSourceId)
-                style.removeSource(dotsSourceId)
+                try { style.removeLayer(trailLayerId) } catch (_: Exception) {}
+                try { style.removeLayer(dotsLayerId) } catch (_: Exception) {}
+                try { style.removeSource(trailSourceId) } catch (_: Exception) {}
+                try { style.removeSource(dotsSourceId) } catch (_: Exception) {}
                 return@LaunchedEffect
             }
 
