@@ -257,13 +257,17 @@ class SosTriggerDetector
                                 sosManager.forceDeactivate()
                             }
 
+                            // Re-read state after potential force-deactivate so service
+                            // lifecycle decision uses current (not stale) active state
+                            val effectiveSosActive = sosManager.state.value !is SosState.Idle
+
                             if (triggerNeeded) {
                                 reloadSettings()
                             } else {
                                 stop()
                             }
 
-                            if (triggerNeeded || sosActive) {
+                            if (triggerNeeded || effectiveSosActive) {
                                 SosTriggerService.start(context)
                             } else {
                                 SosTriggerService.stop(context)

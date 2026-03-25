@@ -397,24 +397,29 @@ class SosManager
 
                         val updateTelemetry = buildTelemetryJson(updateLocation, updateBattery)
 
-                        val contacts = contactRepository.getSosContacts()
-                        for (contact in contacts) {
-                            try {
-                                val destHashBytes = contact.destinationHash.hexToByteArray()
-                                reticulumProtocol.sendLxmfMessageWithMethod(
-                                    destinationHash = destHashBytes,
-                                    content = updateMessage,
-                                    sourceIdentity = identity,
-                                    telemetryJson = updateTelemetry,
-                                    sosState = "update",
-                                )
-                            } catch (e: Exception) {
-                                ensureActive()
-                                Log.e(TAG, "Error sending SOS update to ${contact.destinationHash.take(8)}...", e)
+                        try {
+                            val contacts = contactRepository.getSosContacts()
+                            for (contact in contacts) {
+                                try {
+                                    val destHashBytes = contact.destinationHash.hexToByteArray()
+                                    reticulumProtocol.sendLxmfMessageWithMethod(
+                                        destinationHash = destHashBytes,
+                                        content = updateMessage,
+                                        sourceIdentity = identity,
+                                        telemetryJson = updateTelemetry,
+                                        sosState = "update",
+                                    )
+                                } catch (e: Exception) {
+                                    ensureActive()
+                                    Log.e(TAG, "Error sending SOS update to ${contact.destinationHash.take(8)}...", e)
+                                }
                             }
+                            Log.d(TAG, "Periodic SOS update sent to ${contacts.size} contacts")
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error fetching SOS contacts for periodic update", e)
                         }
-
-                        Log.d(TAG, "Periodic SOS update sent to ${contacts.size} contacts")
                     }
                 }
         }
