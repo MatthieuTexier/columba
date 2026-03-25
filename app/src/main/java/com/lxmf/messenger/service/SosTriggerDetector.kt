@@ -11,6 +11,7 @@ import android.hardware.SensorManager
 import android.util.Log
 import com.lxmf.messenger.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -248,29 +249,30 @@ class SosTriggerDetector
                         Triple(enabled, modes, sosState !is SosState.Idle)
                     }
                         .collect { (enabled, modes, sosActive) ->
-                            val triggerNeeded = enabled && modes.isNotEmpty()
+                            try {
+                                val triggerNeeded = enabled && modes.isNotEmpty()
 
-                            // Auto-deactivate SOS when the feature is disabled
-                            // Force deactivate bypasses PIN — disabling the feature at app level
-                            // is an explicit user action that should always succeed
-                            if (!enabled && sosActive) {
-                                sosManager.forceDeactivate()
-                            }
+                                if (!enabled && sosActive) {
+                                    sosManager.forceDeactivate()
+                                }
 
-                            // Re-read state after potential force-deactivate so service
-                            // lifecycle decision uses current (not stale) active state
-                            val effectiveSosActive = sosManager.state.value !is SosState.Idle
+                                val effectiveSosActive = sosManager.state.value !is SosState.Idle
 
-                            if (triggerNeeded) {
-                                reloadSettings()
-                            } else {
-                                stop()
-                            }
+                                if (triggerNeeded) {
+                                    reloadSettings()
+                                } else {
+                                    stop()
+                                }
 
-                            if (triggerNeeded || effectiveSosActive) {
-                                SosTriggerService.start(context)
-                            } else {
-                                SosTriggerService.stop(context)
+                                if (triggerNeeded || effectiveSosActive) {
+                                    SosTriggerService.start(context)
+                                } else {
+                                    SosTriggerService.stop(context)
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error applying SOS settings", e)
                             }
                         }
                 }

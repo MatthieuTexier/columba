@@ -114,16 +114,18 @@ class SosAudioRecorder
 
         /** Read and delete the output file (safe to call from IO thread). */
         fun readAndDeleteOutputFile(): ByteArray? {
-            val file = outputFile ?: return null
+            val file = synchronized(lock) {
+                val f = outputFile
+                outputFile = null
+                f
+            } ?: return null
             return try {
                 val bytes = file.readBytes()
                 file.delete()
-                outputFile = null
                 Log.d(TAG, "Audio recording stopped: ${bytes.size} bytes")
                 bytes
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to read audio file", e)
-                outputFile = null
                 null
             }
         }

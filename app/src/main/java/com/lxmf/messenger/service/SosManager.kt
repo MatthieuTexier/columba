@@ -221,11 +221,11 @@ class SosManager
             audioRecordingJob = null
             audioRecorder.cancel()
             notificationHelper.cancelNotification(NotificationHelper.NOTIFICATION_ID_SOS)
-            val wasActive = _state.value is SosState.Active
+            val shouldSendCancellation = _state.value is SosState.Active || _state.value is SosState.Sending
             _state.value = SosState.Idle
             scope.launch {
                 settingsRepository.clearSosActiveState()
-                if (wasActive) sendCancellationMessage()
+                if (shouldSendCancellation) sendCancellationMessage()
             }
             Log.d(TAG, "SOS force-deactivated (feature toggle disabled)")
         }
