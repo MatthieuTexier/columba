@@ -2090,13 +2090,11 @@ class SettingsViewModel
                 }
             }
             viewModelScope.launch {
-                settingsRepository.sosFabOffsetX.collect { x ->
-                    _state.update { it.copy(sosFabOffsetX = x) }
-                }
-            }
-            viewModelScope.launch {
-                settingsRepository.sosFabOffsetY.collect { y ->
-                    _state.update { it.copy(sosFabOffsetY = y) }
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosFabOffsetX,
+                    settingsRepository.sosFabOffsetY,
+                ) { x, y -> Pair(x, y) }.collect { (x, y) ->
+                    _state.update { it.copy(sosFabOffsetX = x, sosFabOffsetY = y) }
                 }
             }
             viewModelScope.launch {
@@ -2105,13 +2103,11 @@ class SettingsViewModel
                 }
             }
             viewModelScope.launch {
-                settingsRepository.sosPeriodicUpdates.collect { enabled ->
-                    _state.update { it.copy(sosPeriodicUpdates = enabled) }
-                }
-            }
-            viewModelScope.launch {
-                settingsRepository.sosUpdateIntervalSeconds.collect { seconds ->
-                    _state.update { it.copy(sosUpdateIntervalSeconds = seconds) }
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosPeriodicUpdates,
+                    settingsRepository.sosUpdateIntervalSeconds,
+                ) { enabled, seconds -> Pair(enabled, seconds) }.collect { (enabled, seconds) ->
+                    _state.update { it.copy(sosPeriodicUpdates = enabled, sosUpdateIntervalSeconds = seconds) }
                 }
             }
             viewModelScope.launch {
@@ -2125,23 +2121,19 @@ class SettingsViewModel
                 }
             }
             viewModelScope.launch {
-                settingsRepository.sosShakeSensitivity.collect { sensitivity ->
-                    _state.update { it.copy(sosShakeSensitivity = sensitivity) }
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosShakeSensitivity,
+                    settingsRepository.sosTapCount,
+                ) { sensitivity, count -> Pair(sensitivity, count) }.collect { (sensitivity, count) ->
+                    _state.update { it.copy(sosShakeSensitivity = sensitivity, sosTapCount = count) }
                 }
             }
             viewModelScope.launch {
-                settingsRepository.sosTapCount.collect { count ->
-                    _state.update { it.copy(sosTapCount = count) }
-                }
-            }
-            viewModelScope.launch {
-                settingsRepository.sosAudioEnabled.collect { enabled ->
-                    _state.update { it.copy(sosAudioEnabled = enabled) }
-                }
-            }
-            viewModelScope.launch {
-                settingsRepository.sosAudioDurationSeconds.collect { seconds ->
-                    _state.update { it.copy(sosAudioDurationSeconds = seconds) }
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosAudioEnabled,
+                    settingsRepository.sosAudioDurationSeconds,
+                ) { enabled, seconds -> Pair(enabled, seconds) }.collect { (enabled, seconds) ->
+                    _state.update { it.copy(sosAudioEnabled = enabled, sosAudioDurationSeconds = seconds) }
                 }
             }
         }

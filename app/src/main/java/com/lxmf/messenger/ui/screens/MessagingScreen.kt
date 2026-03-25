@@ -2631,9 +2631,9 @@ private fun parseSosGpsLocation(content: String, fieldsJson: String? = null): Pa
             if (telemetry != null) {
                 val lat = telemetry.optDouble("lat", Double.NaN)
                 val lng = telemetry.optDouble("lng", Double.NaN)
-                if (!lat.isNaN() && !lng.isNaN() && lat in -90.0..90.0 && lng in -180.0..180.0) {
-                    return Pair(lat, lng)
-                }
+                val validCoords = !lat.isNaN() && !lng.isNaN() &&
+                    lat in -90.0..90.0 && lng in -180.0..180.0
+                if (validCoords) return Pair(lat, lng)
             }
         } catch (_: Exception) {
             // Fall through to text parsing
