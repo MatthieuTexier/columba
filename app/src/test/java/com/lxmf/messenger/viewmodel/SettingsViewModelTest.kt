@@ -240,7 +240,10 @@ class SettingsViewModelTest {
         coEvery { identityRepository.updateDisplayName(any(), any()) } returns Result.success(Unit)
         coEvery { identityRepository.updateIconAppearance(any(), any(), any(), any()) } returns Result.success(Unit)
 
-        coEvery { interfaceConfigManager.applyInterfaceChanges() } returns Result.success(Unit)
+        coEvery { interfaceConfigManager.applyInterfaceChanges(any()) } coAnswers {
+            firstArg<(() -> Unit)?>()?.invoke()
+            Result.success(Unit)
+        }
 
         // Mock ReticulumProtocol methods
         every { reticulumProtocol.networkStatus } returns networkStatusFlow
@@ -471,7 +474,7 @@ class SettingsViewModelTest {
 
             assertTrue("togglePreferOwnInstance should complete successfully", result.isSuccess)
             coVerify { settingsRepository.savePreferOwnInstance(true) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -503,7 +506,7 @@ class SettingsViewModelTest {
 
             assertTrue("switchToOwnInstanceAfterLoss should complete successfully", result.isSuccess)
             coVerify { settingsRepository.savePreferOwnInstance(true) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -516,7 +519,7 @@ class SettingsViewModelTest {
 
             assertTrue("switchToSharedInstance should complete successfully", result.isSuccess)
             coVerify { settingsRepository.savePreferOwnInstance(false) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -589,7 +592,7 @@ class SettingsViewModelTest {
             val result = runCatching { viewModel.saveRpcKey("abc123") }
 
             assertTrue("saveRpcKey should complete successfully", result.isSuccess)
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -602,7 +605,7 @@ class SettingsViewModelTest {
 
             assertTrue("saveRpcKey should complete successfully", result.isSuccess)
             // Should not call applyInterfaceChanges since not using shared instance
-            coVerify(exactly = 0) { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify(exactly = 0) { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     // endregion
@@ -676,7 +679,7 @@ class SettingsViewModelTest {
 
             assertTrue("restartService should complete successfully", result.isSuccess)
             // Verify the restart was triggered via interfaceConfigManager
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     // endregion
@@ -887,7 +890,7 @@ class SettingsViewModelTest {
             val result = runCatching { viewModel.restartService() }
 
             assertTrue("restartService should complete successfully", result.isSuccess)
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -1056,7 +1059,7 @@ class SettingsViewModelTest {
             assertTrue("switchToOwnInstanceAfterLoss should complete successfully", result.isSuccess)
             // Verify both preference save and restart are triggered
             coVerify { settingsRepository.savePreferOwnInstance(true) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -2065,14 +2068,14 @@ class SettingsViewModelTest {
             val result = runCatching { viewModel.setTransportNodeEnabled(false) }
 
             assertTrue("setTransportNodeEnabled should complete successfully", result.isSuccess)
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
     fun `setTransportNodeEnabled does not restart if already restarting`() =
         runTest {
             // Make applyInterfaceChanges suspend indefinitely so isRestarting stays true
-            coEvery { interfaceConfigManager.applyInterfaceChanges() } coAnswers {
+            coEvery { interfaceConfigManager.applyInterfaceChanges(any()) } coAnswers {
                 kotlinx.coroutines.delay(Long.MAX_VALUE)
                 Result.success(Unit)
             }
@@ -2097,7 +2100,7 @@ class SettingsViewModelTest {
             viewModel.setTransportNodeEnabled(true)
 
             // Should only have called applyInterfaceChanges once (from the first call)
-            coVerify(exactly = 1) { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify(exactly = 1) { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test

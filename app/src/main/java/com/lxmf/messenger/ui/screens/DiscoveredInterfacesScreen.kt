@@ -77,6 +77,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.lxmf.messenger.R
 import com.lxmf.messenger.reticulum.protocol.DiscoveredInterface
+import com.lxmf.messenger.ui.components.ServiceRestartBanner
 import com.lxmf.messenger.ui.components.SortModeSelector
 import com.lxmf.messenger.ui.theme.MaterialDesignIcons
 import com.lxmf.messenger.util.LocationCompat
@@ -404,28 +405,7 @@ internal fun DiscoverySettingsCard(
             // Restarting message
             if (isRestarting) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                        Text(
-                            text = "Restarting Reticulum service...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                        )
-                    }
-                }
+                ServiceRestartBanner()
             }
 
             Spacer(modifier = Modifier.height(8.dp))

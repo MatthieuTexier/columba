@@ -204,6 +204,7 @@ class SettingsViewModelIncomingMessageLimitTest {
         every { settingsRepository.sosFabOffsetX } returns flowOf(0f)
         every { settingsRepository.sosFabOffsetY } returns flowOf(0f)
         every { contactRepository.getSosContactsFlow() } returns flowOf(emptyList())
+        every { settingsRepository.tryPropagationOnFailFlow } returns MutableStateFlow(true)
         coEvery { settingsRepository.getLastUpdateCheckTime() } returns System.currentTimeMillis()
 
         // Mock PropagationNodeManager flows (StateFlows)
