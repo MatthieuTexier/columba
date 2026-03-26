@@ -162,6 +162,7 @@ class SettingsViewModelIncomingMessageLimitTest {
         every { settingsRepository.lastTelemetrySendTimeFlow } returns MutableStateFlow<Long?>(null)
         every { settingsRepository.mapSourceHttpEnabledFlow } returns MutableStateFlow(false)
         every { settingsRepository.mapSourceRmspEnabledFlow } returns MutableStateFlow(false)
+        every { settingsRepository.mapMarkerDeclutterEnabledFlow } returns MutableStateFlow(true)
         every { mapTileSourceManager.observeRmspServerCount() } returns flowOf(0)
         every { mapTileSourceManager.hasOfflineMaps() } returns flowOf(false)
         every { identityRepository.activeIdentity } returns activeIdentityFlow
@@ -184,6 +185,26 @@ class SettingsViewModelIncomingMessageLimitTest {
         every { settingsRepository.telemetryHostModeEnabledFlow } returns MutableStateFlow(false)
         every { settingsRepository.telemetryAllowedRequestersFlow } returns MutableStateFlow(emptySet())
         every { settingsRepository.includePrereleaseUpdates } returns MutableStateFlow(false)
+        every { settingsRepository.sortMessagesBySentTime } returns flowOf(false)
+        // SOS settings flows
+        every { settingsRepository.sosEnabled } returns flowOf(false)
+        every { settingsRepository.sosMessageTemplate } returns flowOf("SOS! I need help. This is an emergency.")
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(5)
+        every { settingsRepository.sosIncludeLocation } returns flowOf(true)
+        every { settingsRepository.sosSilentAutoAnswer } returns flowOf(false)
+        every { settingsRepository.sosShowFloatingButton } returns flowOf(false)
+        every { settingsRepository.sosDeactivationPin } returns flowOf(null)
+        every { settingsRepository.sosPeriodicUpdates } returns flowOf(false)
+        every { settingsRepository.sosUpdateIntervalSeconds } returns flowOf(120)
+        every { settingsRepository.sosTriggerModes } returns flowOf(emptySet())
+        every { settingsRepository.sosShakeSensitivity } returns flowOf(2.5f)
+        every { settingsRepository.sosTapCount } returns flowOf(3)
+        every { settingsRepository.sosAudioEnabled } returns flowOf(false)
+        every { settingsRepository.sosAudioDurationSeconds } returns flowOf(30)
+        every { settingsRepository.sosFabOffsetX } returns flowOf(0f)
+        every { settingsRepository.sosFabOffsetY } returns flowOf(0f)
+        every { contactRepository.getSosContactsFlow() } returns flowOf(emptyList())
+        every { settingsRepository.tryPropagationOnFailFlow } returns MutableStateFlow(true)
         coEvery { settingsRepository.getLastUpdateCheckTime() } returns System.currentTimeMillis()
 
         // Mock PropagationNodeManager flows (StateFlows)
@@ -202,6 +223,7 @@ class SettingsViewModelIncomingMessageLimitTest {
 
         // Mock methods called during setIncomingMessageSizeLimit
         coEvery { settingsRepository.saveIncomingMessageSizeLimitKb(any()) } just Runs
+        coEvery { settingsRepository.saveMapMarkerDeclutterEnabled(any()) } just Runs
         every { (reticulumProtocol as ServiceReticulumProtocol).setIncomingMessageSizeLimit(any()) } just Runs
     }
 

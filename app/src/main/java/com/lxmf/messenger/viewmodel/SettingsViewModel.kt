@@ -59,6 +59,7 @@ enum class SettingsCardId {
     SHARE_COLUMBA,
     ABOUT,
     SHARED_INSTANCE_BANNER,
+    SOS_EMERGENCY,
 }
 
 @androidx.compose.runtime.Immutable
@@ -86,6 +87,7 @@ data class SettingsState(
     val selectedTheme: AppTheme = PresetTheme.VIBRANT,
     val customThemes: List<AppTheme> = emptyList(),
     val isRestarting: Boolean = false,
+    val networkStatus: NetworkStatus = NetworkStatus.CONNECTING,
     // Shared instance state
     val isSharedInstance: Boolean = false,
     val preferOwnInstance: Boolean = false,
@@ -162,6 +164,26 @@ data class SettingsState(
     // Update checker state
     val updateCheckResult: com.lxmf.messenger.service.AppUpdateResult = com.lxmf.messenger.service.AppUpdateResult.Idle,
     val includePrereleaseUpdates: Boolean = false,
+    // Message sort order: false = received time (default), true = sent time
+    val sortMessagesBySentTime: Boolean = false,
+    // SOS Emergency state
+    val sosEnabled: Boolean = false,
+    val sosMessageTemplate: String = "SOS! I need help. This is an emergency.",
+    val sosCountdownSeconds: Int = 5,
+    val sosIncludeLocation: Boolean = true,
+    val sosSilentAutoAnswer: Boolean = false,
+    val sosShowFloatingButton: Boolean = false,
+    val sosFabOffsetX: Float = 0f,
+    val sosFabOffsetY: Float = 0f,
+    val sosDeactivationPin: String? = null,
+    val sosPeriodicUpdates: Boolean = false,
+    val sosUpdateIntervalSeconds: Int = 120,
+    val sosContactCount: Int = 0,
+    val sosTriggerModes: Set<String> = emptySet(),
+    val sosShakeSensitivity: Float = 2.5f,
+    val sosTapCount: Int = 3,
+    val sosAudioEnabled: Boolean = false,
+    val sosAudioDurationSeconds: Int = 30,
 )
 
 @Suppress("TooManyFunctions", "LargeClass") // ViewModel with many user interaction methods is expected
@@ -233,6 +255,8 @@ class SettingsViewModel
             loadTelemetryCollectorSettings()
             // Load contacts for allowed requesters picker
             loadContacts()
+            // Load SOS emergency settings
+            loadSosSettings()
             // Load update checker settings and maybe check on startup
             loadUpdateSettings()
             // Always start sync state monitoring (no infinite loops, needed for UI)
@@ -379,6 +403,7 @@ class SettingsViewModel
                             selectedTheme = selectedTheme,
                             customThemes = customThemes,
                             isRestarting = _state.value.isRestarting,
+                            networkStatus = _state.value.networkStatus,
                             // Shared instance state from repository (set by service)
                             isSharedInstance = isSharedInstance,
                             preferOwnInstance = preferOwnInstance,
@@ -399,6 +424,7 @@ class SettingsViewModel
                             transportNodeEnabled = transportNodeEnabled,
                             // Message delivery state
                             defaultDeliveryMethod = defaultDeliveryMethod,
+                            tryPropagationOnFail = _state.value.tryPropagationOnFail,
                             // Sync state from flows (included in combine to avoid race conditions)
                             autoRetrieveEnabled = autoRetrieveEnabled,
                             retrievalIntervalSeconds = retrievalIntervalSeconds,
@@ -434,6 +460,12 @@ class SettingsViewModel
                             contacts = _state.value.contacts,
                             // Preserve notifications state from loadNotificationsSettings()
                             notificationsEnabled = _state.value.notificationsEnabled,
+                            // Preserve privacy state from loadPrivacySettings()
+                            blockUnknownSenders = _state.value.blockUnknownSenders,
+                            // Preserve message size limit from loadLocationSharingSettings()
+                            incomingMessageSizeLimitKb = _state.value.incomingMessageSizeLimitKb,
+                            // Preserve message sorting from loadLocationSharingSettings()
+                            sortMessagesBySentTime = _state.value.sortMessagesBySentTime,
                             // Preserve protocol versions from fetchProtocolVersions()
                             reticulumVersion = _state.value.reticulumVersion,
                             lxmfVersion = _state.value.lxmfVersion,
@@ -443,6 +475,22 @@ class SettingsViewModel
                             // Preserve update checker state from loadUpdateSettings()
                             updateCheckResult = _state.value.updateCheckResult,
                             includePrereleaseUpdates = _state.value.includePrereleaseUpdates,
+                            // Preserve SOS state from loadSosSettings()
+                            sosEnabled = _state.value.sosEnabled,
+                            sosMessageTemplate = _state.value.sosMessageTemplate,
+                            sosCountdownSeconds = _state.value.sosCountdownSeconds,
+                            sosIncludeLocation = _state.value.sosIncludeLocation,
+                            sosSilentAutoAnswer = _state.value.sosSilentAutoAnswer,
+                            sosShowFloatingButton = _state.value.sosShowFloatingButton,
+                            sosDeactivationPin = _state.value.sosDeactivationPin,
+                            sosPeriodicUpdates = _state.value.sosPeriodicUpdates,
+                            sosUpdateIntervalSeconds = _state.value.sosUpdateIntervalSeconds,
+                            sosContactCount = _state.value.sosContactCount,
+                            sosTriggerModes = _state.value.sosTriggerModes,
+                            sosShakeSensitivity = _state.value.sosShakeSensitivity,
+                            sosTapCount = _state.value.sosTapCount,
+                            sosAudioEnabled = _state.value.sosAudioEnabled,
+                            sosAudioDurationSeconds = _state.value.sosAudioDurationSeconds,
                         )
                     }.distinctUntilChanged().collect { newState ->
                         applySettingsUpdate(newState)
@@ -922,27 +970,18 @@ class SettingsViewModel
                     // 2. Restart the service process
                     // 3. Re-initialize with config from database
                     interfaceConfigManager
-                        .applyInterfaceChanges()
-                        .onSuccess {
+                        .applyInterfaceChanges(
+                            onServiceReady = { _state.value = _state.value.copy(isRestarting = false) },
+                        ).onSuccess {
                             Log.i(TAG, "Service restart completed successfully")
                         }.onFailure { error ->
                             Log.e(TAG, "Service restart failed: ${error.message}", error)
                         }.getOrThrow() // Convert failure to exception for catch block
-
-                    _state.value = _state.value.copy(isRestarting = false)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error restarting service", e)
                     _state.value = _state.value.copy(isRestarting = false)
                 }
             }
-        }
-
-        /**
-         * Dismiss the restart dialog without stopping the background coroutine.
-         * The restart will either complete or hit the 60s timeout on its own.
-         */
-        fun cancelRestart() {
-            _state.value = _state.value.copy(isRestarting = false)
         }
 
         /**
@@ -963,8 +1002,9 @@ class SettingsViewModel
                     // Use InterfaceConfigManager which handles the full restart lifecycle
                     // Python will check for shared instance, find it offline, and use own interfaces
                     interfaceConfigManager
-                        .applyInterfaceChanges()
-                        .onSuccess {
+                        .applyInterfaceChanges(
+                            onServiceReady = { _state.value = _state.value.copy(isRestarting = false) },
+                        ).onSuccess {
                             Log.i(TAG, "Service restart completed - now using Columba's own instance")
                         }.onFailure { error ->
                             Log.e(TAG, "Service restart failed: ${error.message}", error)
@@ -973,7 +1013,6 @@ class SettingsViewModel
                     // Keep wasUsingSharedInstance = true to show informational banner
                     _state.value =
                         _state.value.copy(
-                            isRestarting = false,
                             wasUsingSharedInstance = true,
                         )
                 } catch (e: Exception) {
@@ -1096,6 +1135,7 @@ class SettingsViewModel
 
                     // Monitor the service's network status for logging
                     reticulumProtocol.networkStatus.collect { status ->
+                        _state.update { it.copy(networkStatus = status) }
                         val currentState = _state.value
 
                         // Only log when we're using a shared instance
@@ -1565,6 +1605,16 @@ class SettingsViewModel
                     _state.update { it.copy(incomingMessageSizeLimitKb = limitKb) }
                 }
             }
+            viewModelScope.launch {
+                settingsRepository.sortMessagesBySentTime.collect { sortBySent ->
+                    _state.update { it.copy(sortMessagesBySentTime = sortBySent) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.tryPropagationOnFailFlow.collect { enabled ->
+                    _state.update { it.copy(tryPropagationOnFail = enabled) }
+                }
+            }
         }
 
         /**
@@ -1662,6 +1712,13 @@ class SettingsViewModel
                 if (reticulumProtocol is com.lxmf.messenger.reticulum.protocol.ServiceReticulumProtocol) {
                     reticulumProtocol.setIncomingMessageSizeLimit(limitKb)
                 }
+            }
+        }
+
+        fun setSortMessagesBySentTime(enabled: Boolean) {
+            viewModelScope.launch {
+                settingsRepository.setSortMessagesBySentTime(enabled)
+                Log.d(TAG, "Sort messages by sent time: $enabled")
             }
         }
 
@@ -2000,6 +2057,152 @@ class SettingsViewModel
                 telemetryCollectorManager.setAllowedRequesters(allowedHashes)
                 Log.d(TAG, "Telemetry allowed requesters saved: ${allowedHashes.size}")
             }
+        }
+
+        // ========== SOS Emergency ==========
+
+        private fun loadSosSettings() {
+            viewModelScope.launch {
+                settingsRepository.sosEnabled.collect { enabled ->
+                    _state.update { it.copy(sosEnabled = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosMessageTemplate.collect { template ->
+                    _state.update { it.copy(sosMessageTemplate = template) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosCountdownSeconds.collect { seconds ->
+                    _state.update { it.copy(sosCountdownSeconds = seconds) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosIncludeLocation.collect { include ->
+                    _state.update { it.copy(sosIncludeLocation = include) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosSilentAutoAnswer.collect { enabled ->
+                    _state.update { it.copy(sosSilentAutoAnswer = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosShowFloatingButton.collect { show ->
+                    _state.update { it.copy(sosShowFloatingButton = show) }
+                }
+            }
+            viewModelScope.launch {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosFabOffsetX,
+                    settingsRepository.sosFabOffsetY,
+                ) { x, y -> Pair(x, y) }.collect { (x, y) ->
+                    _state.update { it.copy(sosFabOffsetX = x, sosFabOffsetY = y) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosDeactivationPin.collect { pin ->
+                    _state.update { it.copy(sosDeactivationPin = pin) }
+                }
+            }
+            viewModelScope.launch {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosPeriodicUpdates,
+                    settingsRepository.sosUpdateIntervalSeconds,
+                ) { enabled, seconds -> Pair(enabled, seconds) }.collect { (enabled, seconds) ->
+                    _state.update { it.copy(sosPeriodicUpdates = enabled, sosUpdateIntervalSeconds = seconds) }
+                }
+            }
+            viewModelScope.launch {
+                contactRepository.getSosContactsFlow().collect { contacts ->
+                    _state.update { it.copy(sosContactCount = contacts.size) }
+                }
+            }
+            viewModelScope.launch {
+                settingsRepository.sosTriggerModes.collect { modes ->
+                    _state.update { it.copy(sosTriggerModes = modes) }
+                }
+            }
+            viewModelScope.launch {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosShakeSensitivity,
+                    settingsRepository.sosTapCount,
+                ) { sensitivity, count -> Pair(sensitivity, count) }.collect { (sensitivity, count) ->
+                    _state.update { it.copy(sosShakeSensitivity = sensitivity, sosTapCount = count) }
+                }
+            }
+            viewModelScope.launch {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepository.sosAudioEnabled,
+                    settingsRepository.sosAudioDurationSeconds,
+                ) { enabled, seconds -> Pair(enabled, seconds) }.collect { (enabled, seconds) ->
+                    _state.update { it.copy(sosAudioEnabled = enabled, sosAudioDurationSeconds = seconds) }
+                }
+            }
+        }
+
+        fun setSosEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosEnabled(enabled) }
+        }
+
+        fun setSosMessageTemplate(template: String) {
+            viewModelScope.launch { settingsRepository.setSosMessageTemplate(template) }
+        }
+
+        fun setSosCountdownSeconds(seconds: Int) {
+            viewModelScope.launch { settingsRepository.setSosCountdownSeconds(seconds) }
+        }
+
+        fun setSosIncludeLocation(include: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosIncludeLocation(include) }
+        }
+
+        fun setSosSilentAutoAnswer(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosSilentAutoAnswer(enabled) }
+        }
+
+        fun setSosShowFloatingButton(show: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosShowFloatingButton(show) }
+        }
+
+        fun setSosFabOffset(x: Float, y: Float) {
+            viewModelScope.launch { settingsRepository.setSosFabOffset(x, y) }
+        }
+
+        fun setSosDeactivationPin(pin: String?) {
+            viewModelScope.launch { settingsRepository.setSosDeactivationPin(pin) }
+        }
+
+        fun setSosPeriodicUpdates(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosPeriodicUpdates(enabled) }
+        }
+
+        fun setSosUpdateIntervalSeconds(seconds: Int) {
+            viewModelScope.launch { settingsRepository.setSosUpdateIntervalSeconds(seconds) }
+        }
+
+        fun toggleSosTriggerMode(mode: String) {
+            viewModelScope.launch {
+                val current = _state.value.sosTriggerModes
+                val updated = if (mode in current) current - mode else current + mode
+                settingsRepository.setSosTriggerModes(updated)
+            }
+        }
+
+        fun setSosShakeSensitivity(sensitivity: Float) {
+            viewModelScope.launch { settingsRepository.setSosShakeSensitivity(sensitivity) }
+        }
+
+        fun setSosTapCount(count: Int) {
+            viewModelScope.launch { settingsRepository.setSosTapCount(count) }
+        }
+
+        fun setSosAudioEnabled(enabled: Boolean) {
+            viewModelScope.launch { settingsRepository.setSosAudioEnabled(enabled) }
+        }
+
+        fun setSosAudioDurationSeconds(seconds: Int) {
+            viewModelScope.launch { settingsRepository.setSosAudioDurationSeconds(seconds) }
         }
 
         private fun loadUpdateSettings() {

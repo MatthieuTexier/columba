@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,6 +66,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Circle
@@ -80,6 +82,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,12 +92,12 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -134,6 +137,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -154,11 +158,14 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.lxmf.messenger.MainActivity
 import com.lxmf.messenger.R
-import androidx.compose.ui.res.stringResource
+import com.lxmf.messenger.notifications.NotificationHelper
+import com.lxmf.messenger.notifications.isSosMessageByField
 import com.lxmf.messenger.service.SyncProgress
 import com.lxmf.messenger.service.SyncResult
 import com.lxmf.messenger.ui.components.AttachmentPanel
+import com.lxmf.messenger.ui.components.AudioMessagePlayer
 import com.lxmf.messenger.ui.components.CodecSelectionDialog
 import com.lxmf.messenger.ui.components.FileAttachmentCard
 import com.lxmf.messenger.ui.components.FileAttachmentOptionsSheet
@@ -178,6 +185,8 @@ import com.lxmf.messenger.ui.components.SyncStatusBottomSheet
 import com.lxmf.messenger.ui.components.simpleVerticalScrollbar
 import com.lxmf.messenger.ui.model.CodecProfile
 import com.lxmf.messenger.ui.model.LocationSharingState
+import com.lxmf.messenger.ui.model.extractAudioBytes
+import com.lxmf.messenger.ui.screens.util.formatTimestamp
 import com.lxmf.messenger.ui.theme.MeshConnected
 import com.lxmf.messenger.ui.theme.MeshOffline
 import com.lxmf.messenger.util.AnimatedImageLoader
@@ -196,11 +205,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 private const val URL_ANNOTATION_TAG = "url"
+
+/** Matches nomadnetwork:// and lxma:// URIs (not caught by Patterns.WEB_URL). */
+private val CUSTOM_SCHEME_URL =
+    java.util.regex.Pattern.compile(
+        """(?:nomadnetwork|lxma)://[^\s,;!?)\]]+(?<![.,;])""",
+        java.util.regex.Pattern.CASE_INSENSITIVE,
+    )
 
 @Composable
 private fun LinkifiedMessageText(
@@ -227,12 +241,31 @@ private fun LinkifiedMessageText(
     LaunchedEffect(text, linkColor) {
         val result =
             withContext(Dispatchers.Default) {
-                val matches = Patterns.WEB_URL.matcher(text)
+                // Collect all URL ranges: standard web URLs + custom schemes
+                val ranges = mutableListOf<Pair<Int, Int>>()
+
+                val webMatcher = Patterns.WEB_URL.matcher(text)
+                while (webMatcher.find()) {
+                    ranges.add(webMatcher.start() to webMatcher.end())
+                }
+
+                val customSchemeMatcher =
+                    CUSTOM_SCHEME_URL.matcher(text)
+                while (customSchemeMatcher.find()) {
+                    val start = customSchemeMatcher.start()
+                    val end = customSchemeMatcher.end()
+                    // Only add if not already covered by a WEB_URL match
+                    if (ranges.none { it.first <= start && it.second >= end }) {
+                        ranges.add(start to end)
+                    }
+                }
+
+                ranges.sortBy { it.first }
+
                 buildAnnotatedString {
                     var currentIndex = 0
-                    while (matches.find()) {
-                        val start = matches.start()
-                        val end = matches.end()
+                    for ((start, end) in ranges) {
+                        if (start < currentIndex) continue // skip overlapping
                         if (start > currentIndex) {
                             append(text.substring(currentIndex, start))
                         }
@@ -403,6 +436,8 @@ fun MessagingScreen(
     // Message font scale (text size dialog)
     val messageFontScale by viewModel.messageFontScale.collectAsStateWithLifecycle()
     var showTextSizeDialog by remember { mutableStateOf(false) }
+    var showBlockDialog by remember { mutableStateOf(false) }
+    val isTransportEnabled by viewModel.isTransportEnabled.collectAsStateWithLifecycle()
 
     // File attachment state
     val selectedFileAttachments by viewModel.selectedFileAttachments.collectAsStateWithLifecycle()
@@ -1039,6 +1074,26 @@ fun MessagingScreen(
                                     showTextSizeDialog = true
                                 },
                             )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Block,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                text = {
+                                    Text(
+                                        "Block User",
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showBlockDialog = true
+                                },
+                            )
                         }
                     }
                 },
@@ -1611,6 +1666,26 @@ fun MessagingScreen(
             onDismiss = { showTextSizeDialog = false },
         )
     }
+
+    // Block user dialog
+    if (showBlockDialog) {
+        BlockUserDialog(
+            peerName = peerName,
+            isTransportEnabled = isTransportEnabled,
+            onConfirm = { deleteMessages, blackholeEnabled ->
+                viewModel.blockUser(
+                    deleteConversation = deleteMessages,
+                    blackholeEnabled = blackholeEnabled,
+                )
+                showBlockDialog = false
+                onBackClick()
+                android.widget.Toast
+                    .makeText(context, "Blocked $peerName", android.widget.Toast.LENGTH_SHORT)
+                    .show()
+            },
+            onDismiss = { showBlockDialog = false },
+        )
+    }
 }
 
 @Suppress("UnusedParameter") // Params kept for API consistency; actions handled by overlay
@@ -1787,7 +1862,7 @@ fun MessageBubble(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = formatTimestamp(message.timestamp),
+                            text = formatTimestamp(message.receivedAt ?: message.timestamp),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                         )
@@ -1814,6 +1889,9 @@ fun MessageBubble(
                 )
             }
         } else {
+            // Detect SOS messages from others
+            val isSosMessage = !isFromMe && isSosMessageByField(message.content, message.fieldsJson)
+
             // Regular message with bubble
             Box {
                 Surface(
@@ -1825,7 +1903,9 @@ fun MessageBubble(
                             bottomEnd = if (isFromMe) 4.dp else 20.dp,
                         ),
                     color =
-                        if (isFromMe) {
+                        if (isSosMessage) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else if (isFromMe) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerHigh
@@ -2036,21 +2116,105 @@ fun MessageBubble(
                             }
                         }
 
+                        // Display audio player if present (LXMF field 7 = AUDIO)
+                        if (message.hasAudioAttachment) {
+                            var audioBytes by remember(message.id) { mutableStateOf<ByteArray?>(null) }
+                            LaunchedEffect(message.id) {
+                                audioBytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    extractAudioBytes(message.fieldsJson)
+                                }
+                            }
+                            if (audioBytes != null) {
+                                AudioMessagePlayer(audioBytes = audioBytes!!)
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+
+                        // SOS header badge for emergency messages
+                        if (isSosMessage) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Warning,
+                                    contentDescription = "SOS Emergency",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "SOS EMERGENCY",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+
                         LinkifiedMessageText(
                             text = message.content,
                             isFromMe = isFromMe,
                             fontScale = fontScale,
                         )
+
+                        // "View on Map" button for SOS messages with GPS coordinates
+                        if (isSosMessage) {
+                            val sosLocation = parseSosGpsLocation(message.content, message.fieldsJson)
+                            if (sosLocation != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    onClick = {
+                                        val mapIntent =
+                                            Intent(context, MainActivity::class.java).apply {
+                                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                                action = NotificationHelper.ACTION_SOS_VIEW_MAP
+                                                putExtra(NotificationHelper.EXTRA_PEER_NAME, peerName)
+                                                putExtra(NotificationHelper.EXTRA_DESTINATION_HASH, message.destinationHash)
+                                                putExtra("latitude", sosLocation.first)
+                                                putExtra("longitude", sosLocation.second)
+                                            }
+                                        context.startActivity(mapIntent)
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.LocationOn,
+                                            contentDescription = "View on Map",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.onError,
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "View on Map",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onError,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = formatTimestamp(message.timestamp),
+                                text = formatTimestamp(message.receivedAt ?: message.timestamp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color =
-                                    if (isFromMe) {
+                                    if (isSosMessage) {
+                                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                                    } else if (isFromMe) {
                                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -2459,22 +2623,33 @@ fun EmptyMessagesState() {
 
 private enum class InputPanelMode { NONE, KEYBOARD, PANEL }
 
-private fun formatTimestamp(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-
-    return when {
-        diff < 60_000 -> "Just now"
-        diff < 3600_000 -> {
-            val minutes = (diff / 60_000).toInt()
-            "$minutes min ago"
+private fun parseSosGpsLocation(content: String, fieldsJson: String? = null): Pair<Double, Double>? {
+    // Primary: extract from FIELD_TELEMETRY in fieldsJson
+    if (fieldsJson != null) {
+        try {
+            val fields = org.json.JSONObject(fieldsJson)
+            // FIELD_TELEMETRY key "2" contains unpacked telemetry with lat/lng
+            val telemetry = fields.optJSONObject("2")
+            if (telemetry != null) {
+                val lat = telemetry.optDouble("lat", Double.NaN)
+                val lng = telemetry.optDouble("lng", Double.NaN)
+                val validCoords = !lat.isNaN() && !lng.isNaN() &&
+                    lat in -90.0..90.0 && lng in -180.0..180.0
+                if (validCoords) return Pair(lat, lng)
+            }
+        } catch (_: Exception) {
+            // Fall through to text parsing
         }
-        diff < 86400_000 -> {
-            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
-        }
-        else -> {
-            SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(timestamp))
-        }
+    }
+    // Fallback: parse from message text (locale-independent regex)
+    val regex = Regex("""GPS:\s*(-?[\d.,]+),\s*(-?[\d.,]+)""")
+    val match = regex.find(content) ?: return null
+    return try {
+        val lat = match.groupValues[1].replace(',', '.').toDouble()
+        val lng = match.groupValues[2].replace(',', '.').toDouble()
+        if (lat in -90.0..90.0 && lng in -180.0..180.0) Pair(lat, lng) else null
+    } catch (e: NumberFormatException) {
+        null
     }
 }
 
@@ -2787,80 +2962,4 @@ internal fun getMessageStatusIcon(status: String): String =
         else -> ""
     }
 
-@Composable
-private fun TextSizeDialog(
-    currentScale: Float,
-    onScaleChange: (Float) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var sliderValue by remember(currentScale) { mutableStateOf(currentScale) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = Icons.Default.FormatSize,
-                contentDescription = null,
-            )
-        },
-        title = { Text("Text size") },
-        text = {
-            Column {
-                // Preview text
-                Text(
-                    text = "Preview message text",
-                    style =
-                        MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = MaterialTheme.typography.bodyLarge.fontSize * sliderValue,
-                        ),
-                    modifier = Modifier.padding(bottom = 16.dp),
-                )
-
-                // Scale label
-                Text(
-                    text = "${(sliderValue * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                // Slider
-                Slider(
-                    value = sliderValue,
-                    onValueChange = { sliderValue = it },
-                    valueRange = 0.7f..2.0f,
-                    steps = 12,
-                )
-
-                // Min/Max labels
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "A",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "A",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onScaleChange(sliderValue)
-                onDismiss()
-            }) {
-                Text("OK")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
-}
+// TextSizeDialog has been moved to TextSizeDialog.kt

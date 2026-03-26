@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lxmf.messenger.data.model.EnrichedContact
 import com.lxmf.messenger.data.repository.ContactRepository
 import com.lxmf.messenger.data.repository.ReceivedLocationRepository
+import com.lxmf.messenger.service.IdentityResolutionManager
 import com.lxmf.messenger.service.PropagationNodeManager
 import com.lxmf.messenger.service.RelayInfo
 import com.lxmf.messenger.util.IdentityQrCodeUtils
@@ -13,6 +14,7 @@ import com.lxmf.messenger.util.validation.IdentityInput
 import com.lxmf.messenger.util.validation.InputValidator
 import com.lxmf.messenger.util.validation.ValidationResult
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -79,6 +81,7 @@ class ContactsViewModel
         private val contactRepository: ContactRepository,
         private val propagationNodeManager: PropagationNodeManager,
         private val receivedLocationRepository: ReceivedLocationRepository,
+        private val identityResolutionManager: IdentityResolutionManager,
     ) : ViewModel() {
         companion object {
             private const val TAG = "ContactsViewModel"
@@ -283,35 +286,29 @@ class ContactsViewModel
         }
 
         /**
-         * Update contact nickname
+         * Update contact nickname or notes.
+         *
+         * @param destinationHash The contact's destination hash
+         * @param nickname If non-null, updates the nickname (pass empty string to clear)
+         * @param notes If non-null, updates the notes (pass empty string to clear)
          */
-        fun updateNickname(
+        fun updateContact(
             destinationHash: String,
-            nickname: String?,
+            nickname: String? = null,
+            notes: String? = null,
         ) {
             viewModelScope.launch {
                 try {
-                    contactRepository.updateNickname(destinationHash, nickname)
-                    Log.d(TAG, "Updated nickname for $destinationHash")
+                    if (nickname != null) {
+                        contactRepository.updateNickname(destinationHash, nickname)
+                        Log.d(TAG, "Updated nickname for $destinationHash")
+                    }
+                    if (notes != null) {
+                        contactRepository.updateNotes(destinationHash, notes)
+                        Log.d(TAG, "Updated notes for $destinationHash")
+                    }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to update nickname for $destinationHash", e)
-                }
-            }
-        }
-
-        /**
-         * Update contact notes
-         */
-        fun updateNotes(
-            destinationHash: String,
-            notes: String?,
-        ) {
-            viewModelScope.launch {
-                try {
-                    contactRepository.updateNotes(destinationHash, notes)
-                    Log.d(TAG, "Updated notes for $destinationHash")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to update notes for $destinationHash", e)
+                    Log.e(TAG, "Failed to update contact $destinationHash", e)
                 }
             }
         }
@@ -326,6 +323,22 @@ class ContactsViewModel
                     Log.d(TAG, "Toggled pin for $destinationHash")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to toggle pin for $destinationHash", e)
+                }
+            }
+        }
+
+        val sosActiveSenders: StateFlow<Set<String>> = com.lxmf.messenger.service.SosActiveTracker.activeSenders
+
+        /**
+         * Toggle SOS tag for a contact
+         */
+        fun toggleSosTag(destinationHash: String) {
+            viewModelScope.launch {
+                try {
+                    contactRepository.toggleSosTag(destinationHash)
+                    Log.d(TAG, "Toggled SOS tag for $destinationHash")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to toggle SOS tag for $destinationHash", e)
                 }
             }
         }
@@ -464,6 +477,9 @@ class ContactsViewModel
                             )
                         if (result.isSuccess) {
                             Log.d(TAG, "Added contact with full identity: $destinationHash")
+                            viewModelScope.launch(Dispatchers.IO) {
+                                identityResolutionManager.requestPathForContact(identityInput.destinationHash)
+                            }
                             AddContactResult.Success
                         } else {
                             val error = result.exceptionOrNull()?.message ?: "Unknown error"
@@ -483,11 +499,16 @@ class ContactsViewModel
                             when (result.getOrNull()) {
                                 is ContactRepository.AddPendingResult.ResolvedImmediately -> {
                                     Log.d(TAG, "Contact resolved from existing announce: $destinationHash")
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        identityResolutionManager.requestPathForContact(identityInput.destinationHash)
+                                    }
                                     AddContactResult.Success
                                 }
                                 is ContactRepository.AddPendingResult.AddedAsPending -> {
                                     Log.d(TAG, "Added pending contact: $destinationHash")
-                                    // TODO: Trigger network path request here when service integration is ready
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        identityResolutionManager.requestPathForContact(identityInput.destinationHash)
+                                    }
                                     AddContactResult.PendingIdentity
                                 }
                                 null -> {
@@ -515,12 +536,12 @@ class ContactsViewModel
          * @param destinationHash The contact's destination hash
          */
         fun retryIdentityResolution(destinationHash: String) {
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.IO) {
                 try {
                     val result = contactRepository.resetContactForRetry(destinationHash)
                     if (result.isSuccess) {
                         Log.d(TAG, "Reset contact for retry: $destinationHash")
-                        // TODO: Trigger network path request here when service integration is ready
+                        identityResolutionManager.retryResolution(destinationHash)
                     } else {
                         Log.e(TAG, "Failed to reset contact for retry: ${result.exceptionOrNull()?.message}")
                     }
@@ -534,6 +555,5 @@ class ContactsViewModel
          * Get the latest known, non-expired location for a peer.
          * Returns a Pair(latitude, longitude) or null if no valid location is known.
          */
-        suspend fun getContactLocation(destinationHash: String): Pair<Double, Double>? =
-            receivedLocationRepository.getContactLocation(destinationHash)
+        suspend fun getContactLocation(destinationHash: String): Pair<Double, Double>? = receivedLocationRepository.getContactLocation(destinationHash)
     }

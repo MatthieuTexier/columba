@@ -77,6 +77,11 @@ data class MessageUi(
      */
     val hasFileAttachments: Boolean = false,
     /**
+     * Indicates whether this message has an audio attachment (LXMF field 7).
+     * When true, fieldsJson contains audio data for playback.
+     */
+    val hasAudioAttachment: Boolean = false,
+    /**
      * ID of the message this is replying to, if any.
      * Extracted from LXMF field 16 {"reply_to": "message_id"}.
      */
@@ -116,6 +121,19 @@ data class MessageUi(
      * Null for BLE/TCP/AutoInterface, sent messages, or pre-feature messages.
      */
     val receivedSnr: Float? = null,
+    /**
+     * Local reception timestamp (our clock) for sorting.
+     * For received messages: System.currentTimeMillis() when we received it.
+     * For sent messages: same as timestamp (our clock is authoritative).
+     * Null for messages created before this feature was added.
+     */
+    val receivedAt: Long? = null,
+    /**
+     * Interface name through which message was sent.
+     * Examples: "TCPInterface[Sideband Server/1.2.3.4:4242]", "AutoInterface[Local]".
+     * Null for received messages or messages sent before this feature was added.
+     */
+    val sentInterface: String? = null,
 ) {
     /**
      * Whether this message should be displayed as a standalone media item without a bubble.

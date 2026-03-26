@@ -2,14 +2,19 @@ package com.lxmf.messenger.service
 
 import android.util.Log
 import com.lxmf.messenger.data.db.dao.PeerIconDao
+import com.lxmf.messenger.data.db.dao.ReceivedLocationDao
 import com.lxmf.messenger.data.db.entity.ContactStatus
 import com.lxmf.messenger.data.db.entity.PeerIconEntity
+import com.lxmf.messenger.data.db.entity.ReceivedLocationEntity
 import com.lxmf.messenger.data.model.InterfaceType
 import com.lxmf.messenger.data.repository.AnnounceRepository
 import com.lxmf.messenger.data.repository.ContactRepository
 import com.lxmf.messenger.data.repository.ConversationRepository
 import com.lxmf.messenger.data.repository.IdentityRepository
 import com.lxmf.messenger.notifications.NotificationHelper
+import com.lxmf.messenger.notifications.isSosCancelledByField
+import com.lxmf.messenger.notifications.isSosMessageByField
+import com.lxmf.messenger.notifications.isSosUpdateByField
 import com.lxmf.messenger.reticulum.protocol.ReticulumProtocol
 import com.lxmf.messenger.service.util.PeerNameResolver
 import kotlinx.coroutines.CoroutineScope
@@ -48,10 +53,12 @@ class MessageCollector
         private val identityRepository: IdentityRepository,
         private val notificationHelper: NotificationHelper,
         private val peerIconDao: PeerIconDao,
+        private val receivedLocationDao: ReceivedLocationDao,
         private val conversationLinkManager: ConversationLinkManager,
     ) {
         companion object {
             private const val TAG = "MessageCollector"
+            private const val PRESEED_WINDOW_MS = 30L * 24 * 60 * 60 * 1000 // 30 days
         }
 
         // Application-scoped coroutine for background message collection
@@ -83,6 +90,20 @@ class MessageCollector
 
             // Collect messages from the Reticulum protocol
             scope.launch {
+                // Pre-seed processedMessageIds with recent received messages from the DB.
+                // This prevents duplicate notifications when messages are replayed via SharedFlow
+                // or re-broadcast by drainPendingMessages() after a service restart.
+                // Bounded to last 30 days to avoid unbounded memory growth.
+                // Done inside the collection coroutine to ensure it completes before we subscribe.
+                try {
+                    val thirtyDaysAgo = System.currentTimeMillis() - PRESEED_WINDOW_MS
+                    val existingIds = conversationRepository.getReceivedMessageIds(since = thirtyDaysAgo)
+                    processedMessageIds.addAll(existingIds)
+                    Log.i(TAG, "Pre-seeded ${existingIds.size} existing message IDs for notification dedup")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to pre-seed message IDs - duplicate notifications may occur", e)
+                }
+
                 try {
                     reticulumProtocol.observeMessages().collect { receivedMessage ->
                         // De-duplicate: Skip if we've already processed this message in-memory
@@ -135,17 +156,73 @@ class MessageCollector
                                     false
                                 }
 
-                            // Only notify if the message hasn't been read yet
+                            // Track SOS active state (works for both new and already-persisted messages)
+                            // Primary: check FIELD_COMMANDS sos_state in fieldsJson; Fallback: text-based
+                            val fieldsJson = receivedMessage.fieldsJson
+                            if (isSosCancelledByField(receivedMessage.content, fieldsJson)) {
+                                SosActiveTracker.removeSender(sourceHash)
+                                notificationHelper.cancelNotification(
+                                    NotificationHelper.NOTIFICATION_ID_SOS xor (sourceHash.hashCode() and 0x7FFFFFFF),
+                                )
+                                notificationHelper.notifyMessageReceived(
+                                    destinationHash = sourceHash,
+                                    peerName = peerName,
+                                    messagePreview = receivedMessage.content.take(100),
+                                    isFavorite = isFavorite,
+                                )
+                                Log.d(TAG, "Cleared SOS active and notification for ${sourceHash.take(16)} (already-persisted)")
+                            } else if (isSosMessageByField(receivedMessage.content, fieldsJson)) {
+                                SosActiveTracker.addSender(sourceHash)
+                                Log.d(TAG, "Set SOS active for ${sourceHash.take(16)} (already-persisted)")
+                            }
+
+                            // Only notify and store trail for unread messages
+                            // This prevents duplicate trail rows on service restart
                             // This prevents duplicate notifications after service restart
                             // for messages the user has already seen
                             if (!existingMessage.isRead) {
+                                // Store SOS trail location (only for unread = first processing)
+                                if (isSosMessageByField(receivedMessage.content, fieldsJson)) {
+                                    val trailLocation = notificationHelper.parseSosLocation(receivedMessage.content)
+                                    if (trailLocation != null) {
+                                        try {
+                                            receivedLocationDao.insert(
+                                                ReceivedLocationEntity(
+                                                    id = java.util.UUID.randomUUID().toString(),
+                                                    senderHash = sourceHash,
+                                                    latitude = trailLocation.first,
+                                                    longitude = trailLocation.second,
+                                                    accuracy = 0f,
+                                                    timestamp = receivedMessage.timestamp,
+                                                    expiresAt = null,
+                                                    source = ReceivedLocationEntity.SOURCE_SOS_TRAIL,
+                                                    receivedAt = System.currentTimeMillis(),
+                                                ),
+                                            )
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "Failed to store SOS trail location", e)
+                                        }
+                                    }
+                                }
                                 try {
-                                    notificationHelper.notifyMessageReceived(
-                                        destinationHash = sourceHash,
-                                        peerName = peerName,
-                                        messagePreview = receivedMessage.content.take(100),
-                                        isFavorite = isFavorite,
-                                    )
+                                    if (isSosMessageByField(receivedMessage.content, fieldsJson)) {
+                                        val location = notificationHelper.parseSosLocation(receivedMessage.content)
+                                        notificationHelper.notifySosReceived(
+                                            destinationHash = sourceHash,
+                                            peerName = peerName,
+                                            messageContent = receivedMessage.content,
+                                            latitude = location?.first,
+                                            longitude = location?.second,
+                                            isUpdate = isSosUpdateByField(receivedMessage.content, fieldsJson),
+                                        )
+                                    } else {
+                                        notificationHelper.notifyMessageReceived(
+                                            destinationHash = sourceHash,
+                                            peerName = peerName,
+                                            messagePreview = receivedMessage.content.take(100),
+                                            isFavorite = isFavorite,
+                                        )
+                                    }
                                     Log.d(TAG, "Posted notification for already-persisted unread message")
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Failed to post notification for already-persisted message", e)
@@ -186,14 +263,15 @@ class MessageCollector
                         Log.d(TAG, "Received new message #${_messagesCollected.value} from $sourceHash")
 
                         // Create data message for storage
+                        val now = System.currentTimeMillis()
                         val dataMessage =
                             DataMessage(
                                 id = receivedMessage.messageHash,
                                 // From sender's perspective
                                 destinationHash = sourceHash,
                                 content = receivedMessage.content,
-                                // Use local reception time for consistent ordering
-                                timestamp = System.currentTimeMillis(),
+                                // Use sender's timestamp for display; receivedAt for sort ordering
+                                timestamp = receivedMessage.timestamp,
                                 isFromMe = false,
                                 status = "delivered",
                                 // LXMF attachments
@@ -201,6 +279,8 @@ class MessageCollector
                                 // Routing info (hop count and receiving interface)
                                 receivedHopCount = receivedMessage.receivedHopCount,
                                 receivedInterface = receivedMessage.receivedInterface,
+                                // Local reception time for sort ordering
+                                receivedAt = now,
                             )
 
                         // Get peer name from cache, existing conversation, or use formatted hash
@@ -262,16 +342,62 @@ class MessageCollector
                                     false
                                 }
 
-                            // Show notification for received message
+                            // Show notification - SOS messages get urgent treatment
                             try {
-                                notificationHelper.notifyMessageReceived(
-                                    destinationHash = sourceHash,
-                                    peerName = peerName,
-                                    // Truncate preview
-                                    messagePreview = receivedMessage.content.take(100),
-                                    isFavorite = isFavorite,
-                                )
-                                Log.d(TAG, "Posted notification for message (favorite: $isFavorite)")
+                                val newFieldsJson = receivedMessage.fieldsJson
+                                if (isSosCancelledByField(receivedMessage.content, newFieldsJson)) {
+                                    SosActiveTracker.removeSender(sourceHash)
+                                    notificationHelper.cancelNotification(
+                                        NotificationHelper.NOTIFICATION_ID_SOS xor (sourceHash.hashCode() and 0x7FFFFFFF),
+                                    )
+                                    notificationHelper.notifyMessageReceived(
+                                        destinationHash = sourceHash,
+                                        peerName = peerName,
+                                        messagePreview = receivedMessage.content.take(100),
+                                        isFavorite = isFavorite,
+                                    )
+                                    Log.d(TAG, "Cleared SOS active and notification for ${sourceHash.take(16)}")
+                                } else if (isSosMessageByField(receivedMessage.content, newFieldsJson)) {
+                                    SosActiveTracker.addSender(sourceHash)
+                                    val location = notificationHelper.parseSosLocation(receivedMessage.content)
+                                    notificationHelper.notifySosReceived(
+                                        destinationHash = sourceHash,
+                                        peerName = peerName,
+                                        messageContent = receivedMessage.content,
+                                        latitude = location?.first,
+                                        longitude = location?.second,
+                                        isUpdate = isSosUpdateByField(receivedMessage.content, newFieldsJson),
+                                    )
+                                    // Store SOS location for breadcrumb trail
+                                    if (location != null) {
+                                        try {
+                                            receivedLocationDao.insert(
+                                                ReceivedLocationEntity(
+                                                    id = java.util.UUID.randomUUID().toString(),
+                                                    senderHash = sourceHash,
+                                                    latitude = location.first,
+                                                    longitude = location.second,
+                                                    accuracy = 0f,
+                                                    timestamp = receivedMessage.timestamp,
+                                                    expiresAt = null,
+                                                    source = ReceivedLocationEntity.SOURCE_SOS_TRAIL,
+                                                    receivedAt = System.currentTimeMillis(),
+                                                ),
+                                            )
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "Failed to store SOS location for trail", e)
+                                        }
+                                    }
+                                    Log.d(TAG, "Posted SOS notification for message from ${sourceHash.take(16)}")
+                                } else {
+                                    notificationHelper.notifyMessageReceived(
+                                        destinationHash = sourceHash,
+                                        peerName = peerName,
+                                        messagePreview = receivedMessage.content.take(100),
+                                        isFavorite = isFavorite,
+                                    )
+                                    Log.d(TAG, "Posted notification for message (favorite: $isFavorite)")
+                                }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to post message notification", e)
                             }

@@ -193,6 +193,8 @@ fun MapScreen(
     focusLabel: String? = null,
     // Optional full interface details for bottom sheet
     focusInterfaceDetails: FocusInterfaceDetails? = null,
+    // Optional SOS sender hash for breadcrumb trail rendering
+    sosTrailSenderHash: String? = null,
     // Permission UI state - managed by parent to survive tab switches (issue #342)
     permissionSheetDismissed: Boolean = false,
     onPermissionSheetDismissed: () -> Unit = {},
@@ -257,10 +259,11 @@ fun MapScreen(
                         val screenPoint = map.projection.toScreenLocation(LatLng(m.latitude, m.longitude))
                         ScreenMarker(m.destinationHash, m.latitude, m.longitude, screenPoint.x, screenPoint.y)
                     }
-                val screenToLatLng = ScreenToLatLng { x, y ->
-                    val latLng = map.projection.fromScreenLocation(android.graphics.PointF(x, y))
-                    Pair(latLng.latitude, latLng.longitude)
-                }
+                val screenToLatLng =
+                    ScreenToLatLng { x, y ->
+                        val latLng = map.projection.fromScreenLocation(android.graphics.PointF(x, y))
+                        Pair(latLng.latitude, latLng.longitude)
+                    }
                 calculateDeclutteredPositions(screenMarkers, screenToLatLng)
             } else {
                 emptyList()
@@ -403,15 +406,22 @@ fun MapScreen(
         // Enable user location component (blue dot)
         if (hasLocationPermission) {
             @SuppressLint("MissingPermission")
-            map.locationComponent.apply {
-                activateLocationComponent(
-                    LocationComponentActivationOptions
-                        .builder(ctx, style)
-                        .build(),
-                )
-                isLocationComponentEnabled = true
-                cameraMode = CameraMode.NONE
-                renderMode = RenderMode.COMPASS
+            try {
+                map.locationComponent.apply {
+                    activateLocationComponent(
+                        LocationComponentActivationOptions
+                            .builder(ctx, style)
+                            .build(),
+                    )
+                    isLocationComponentEnabled = true
+                    cameraMode = CameraMode.NONE
+                    renderMode = RenderMode.COMPASS
+                }
+            } catch (e: SecurityException) {
+                // Permission was revoked between our check and MapLibre's
+                // internal LocationManager call (COLUMBA-5R)
+                Log.w("MapScreen", "Location permission revoked, disabling location component", e)
+                viewModel.onPermissionResult(false)
             }
         }
 
@@ -512,32 +522,6 @@ fun MapScreen(
         }
     }
 
-    // Animate camera to a contact marker requested via "Locate on Map".
-    // Uses contactMarkers as a key so it retries when markers load from the database.
-    val pendingFocus by viewModel.pendingFocusContact.collectAsState()
-    LaunchedEffect(pendingFocus, mapLibreMap, state.contactMarkers) {
-        val hash = pendingFocus ?: return@LaunchedEffect
-        val map = mapLibreMap ?: return@LaunchedEffect
-        val marker = state.contactMarkers.find {
-            it.destinationHash.equals(hash, ignoreCase = true)
-        }
-        marker?.let {
-            val cameraPosition =
-                CameraPosition
-                    .Builder()
-                    .target(LatLng(it.latitude, it.longitude))
-                    .zoom(15.0)
-                    .build()
-            map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
-            viewModel.consumePendingFocus()
-        } ?: run {
-            // Markers loaded but contact not found — stop waiting to avoid stale focus
-            if (state.contactMarkers.isNotEmpty() || !state.isLoading) {
-                viewModel.consumePendingFocus()
-            }
-        }
-    }
-
     // Set initial camera position once both map and default region state are resolved.
     // Deferred from onMapReady to avoid the 0,0 race condition (issue #607).
     LaunchedEffect(mapLibreMap, state.defaultRegionLoaded) {
@@ -600,6 +584,32 @@ fun MapScreen(
             hasInitiallyCentered = true
         }
     }
+    // Animate camera to a contact marker requested via "Locate on Map".
+    // Uses contactMarkers as a key so it retries when markers load from the database.
+    val pendingFocus by viewModel.pendingFocusContact.collectAsState()
+    LaunchedEffect(pendingFocus, mapLibreMap, state.contactMarkers) {
+        val hash = pendingFocus ?: return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        val marker =
+            state.contactMarkers.find {
+                it.destinationHash.equals(hash, ignoreCase = true)
+            }
+        marker?.let {
+            val cameraPosition =
+                CameraPosition
+                    .Builder()
+                    .target(LatLng(it.latitude, it.longitude))
+                    .zoom(15.0)
+                    .build()
+            map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
+            viewModel.consumePendingFocus()
+        } ?: run {
+            // Markers loaded but contact not found — stop waiting to avoid stale focus
+            if (state.contactMarkers.isNotEmpty() || !state.isLoading) {
+                viewModel.consumePendingFocus()
+            }
+        }
+    }
 
     // Enable location component when permission is granted
     @SuppressLint("MissingPermission")
@@ -607,17 +617,24 @@ fun MapScreen(
         if (state.hasLocationPermission) {
             mapLibreMap?.let { map ->
                 map.style?.let { style ->
-                    map.locationComponent.apply {
-                        if (!isLocationComponentActivated) {
-                            activateLocationComponent(
-                                LocationComponentActivationOptions
-                                    .builder(context, style)
-                                    .build(),
-                            )
+                    try {
+                        map.locationComponent.apply {
+                            if (!isLocationComponentActivated) {
+                                activateLocationComponent(
+                                    LocationComponentActivationOptions
+                                        .builder(context, style)
+                                        .build(),
+                                )
+                            }
+                            isLocationComponentEnabled = true
+                            cameraMode = CameraMode.NONE
+                            renderMode = RenderMode.COMPASS
                         }
-                        isLocationComponentEnabled = true
-                        cameraMode = CameraMode.NONE
-                        renderMode = RenderMode.COMPASS
+                    } catch (e: SecurityException) {
+                        // Permission was revoked between our check and MapLibre's
+                        // internal LocationManager call (COLUMBA-5R)
+                        Log.w("MapScreen", "Location permission revoked, disabling location component", e)
+                        viewModel.onPermissionResult(false)
                     }
                 }
             }
@@ -674,6 +691,23 @@ fun MapScreen(
                 when (event) {
                     Lifecycle.Event.ON_START -> view.onStart()
                     Lifecycle.Event.ON_RESUME -> {
+                        // Re-check actual Android permission BEFORE view.onResume(),
+                        // which may internally resume the location engine and throw
+                        // SecurityException if permission was revoked (COLUMBA-5R).
+                        val stillHasPermission = LocationPermissionManager.hasPermission(context)
+                        if (state.hasLocationPermission && !stillHasPermission) {
+                            // Disable location component before MapLibre resumes it
+                            mapLibreMap?.locationComponent?.let { lc ->
+                                if (lc.isLocationComponentActivated) {
+                                    lc.isLocationComponentEnabled = false
+                                }
+                            }
+                            viewModel.onPermissionResult(false)
+                            platformLocationListener?.let {
+                                LocationCompat.removeLocationUpdates(context, it)
+                            }
+                            platformLocationListener = null
+                        }
                         view.onResume()
                         viewModel.refreshDefaultRegion()
                     }
@@ -808,6 +842,12 @@ fun MapScreen(
                                         }
                                     if (marker != null) {
                                         selectedMarker = marker
+                                        // Center the map on the tapped contact's location
+                                        map.animateCamera(
+                                            CameraUpdateFactory.newLatLng(
+                                                LatLng(marker.latitude, marker.longitude),
+                                            ),
+                                        )
                                         Log.d("MapScreen", "Marker tapped: ${marker.destinationHash.take(16)}")
                                     }
                                 }
@@ -840,6 +880,7 @@ fun MapScreen(
                         // default viewport before our positioning LaunchedEffect runs —
                         // otherwise, a fresh MapView's default (zoom ~0, full world) can
                         // overwrite the saved position during the race window.
+                        // Also recalculates declutter positions for overlapping markers.
                         map.addOnCameraIdleListener {
                             if (!isInitialPositionSet) return@addOnCameraIdleListener
                             val pos = map.cameraPosition
@@ -1103,6 +1144,92 @@ fun MapScreen(
             Log.d("MapScreen", "Added focus marker at $focusLatitude, $focusLongitude for $focusLabel")
         }
 
+        // SOS breadcrumb trail - live updates
+        val sosTrailLocations =
+            sosTrailSenderHash?.let {
+                viewModel.observeSosTrailLocations(it).collectAsState(initial = emptyList())
+            }
+
+        LaunchedEffect(sosTrailSenderHash, mapStyleLoaded, sosTrailLocations?.value) {
+            if (!mapStyleLoaded || sosTrailSenderHash == null) return@LaunchedEffect
+            val map = mapLibreMap ?: return@LaunchedEffect
+            val screenDensity = context.resources.displayMetrics.density
+            val locations = sosTrailLocations?.value ?: return@LaunchedEffect
+
+            val trailSourceId = "sos-trail-source"
+            val trailLayerId = "sos-trail-layer"
+            val dotsSourceId = "sos-trail-dots-source"
+            val dotsLayerId = "sos-trail-dots-layer"
+
+            // If no locations (cleared), remove trail layers
+            if (locations.size < 2) {
+                val style = map.style ?: return@LaunchedEffect
+                try { style.removeLayer(trailLayerId) } catch (_: Exception) {}
+                try { style.removeLayer(dotsLayerId) } catch (_: Exception) {}
+                try { style.removeSource(trailSourceId) } catch (_: Exception) {}
+                try { style.removeSource(dotsSourceId) } catch (_: Exception) {}
+                return@LaunchedEffect
+            }
+
+            try {
+                val style = map.style ?: return@LaunchedEffect
+
+                val sortedLocations = locations.sortedBy { it.timestamp }
+                val points = sortedLocations.map { Point.fromLngLat(it.longitude, it.latitude) }
+                val lineFeature = Feature.fromGeometry(LineString.fromLngLats(points))
+                val dotFeatures =
+                    sortedLocations.map { loc ->
+                        Feature.fromGeometry(Point.fromLngLat(loc.longitude, loc.latitude))
+                    }
+
+                // Trail polyline
+                val existingTrailSource = style.getSourceAs<GeoJsonSource>(trailSourceId)
+                if (existingTrailSource != null) {
+                    existingTrailSource.setGeoJson(FeatureCollection.fromFeatures(listOf(lineFeature)))
+                } else {
+                    style.addSource(GeoJsonSource(trailSourceId, FeatureCollection.fromFeatures(listOf(lineFeature))))
+                    val trailLayer =
+                        LineLayer(trailLayerId, trailSourceId)
+                            .withProperties(
+                                PropertyFactory.lineWidth(3f * screenDensity),
+                                PropertyFactory.lineColor(Expression.color(android.graphics.Color.parseColor("#F44336"))),
+                                PropertyFactory.lineOpacity(Expression.literal(0.8f)),
+                            )
+                    val belowLayer = style.getLayer("focus-marker-layer")
+                    if (belowLayer != null) {
+                        style.addLayerBelow(trailLayer, "focus-marker-layer")
+                    } else {
+                        style.addLayer(trailLayer)
+                    }
+                }
+
+                // Trail dot markers
+                val existingDotsSource = style.getSourceAs<GeoJsonSource>(dotsSourceId)
+                if (existingDotsSource != null) {
+                    existingDotsSource.setGeoJson(FeatureCollection.fromFeatures(dotFeatures))
+                } else {
+                    style.addSource(GeoJsonSource(dotsSourceId, FeatureCollection.fromFeatures(dotFeatures)))
+                    val dotsLayer =
+                        CircleLayer(dotsLayerId, dotsSourceId)
+                            .withProperties(
+                                PropertyFactory.circleRadius(4f * screenDensity),
+                                PropertyFactory.circleColor(Expression.color(android.graphics.Color.parseColor("#F44336"))),
+                                PropertyFactory.circleStrokeWidth(1f * screenDensity),
+                                PropertyFactory.circleStrokeColor(Expression.color(android.graphics.Color.WHITE)),
+                            )
+                    if (style.getLayer(trailLayerId) != null) {
+                        style.addLayerAbove(dotsLayer, trailLayerId)
+                    } else {
+                        style.addLayer(dotsLayer)
+                    }
+                }
+
+                Log.d("MapScreen", "Updated SOS trail: ${locations.size} points for ${sosTrailSenderHash.take(8)}")
+            } catch (e: Exception) {
+                Log.e("MapScreen", "Failed to update SOS trail layers", e)
+            }
+        }
+
         // Gradient scrim behind TopAppBar for readability
         Box(
             modifier =
@@ -1175,6 +1302,17 @@ fun MapScreen(
                     // Account for bottom navigation bar
                     .padding(bottom = 80.dp),
         ) {
+            // Clear SOS Trail button (only when trail is visible)
+            if (sosTrailSenderHash != null && (sosTrailLocations?.value?.size ?: 0) >= 2) {
+                SmallFloatingActionButton(
+                    onClick = { viewModel.clearSosTrail(sosTrailSenderHash) },
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear SOS Trail")
+                }
+            }
+
             // Offline Maps button
             SmallFloatingActionButton(
                 onClick = onNavigateToOfflineMaps,

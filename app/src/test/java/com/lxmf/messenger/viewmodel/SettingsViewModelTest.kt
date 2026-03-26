@@ -162,6 +162,7 @@ class SettingsViewModelTest {
         every { settingsRepository.autoSelectPropagationNodeFlow } returns flowOf(false)
         every { settingsRepository.mapSourceHttpEnabledFlow } returns flowOf(true)
         every { settingsRepository.mapSourceRmspEnabledFlow } returns flowOf(false)
+        every { settingsRepository.mapMarkerDeclutterEnabledFlow } returns flowOf(true)
         every { settingsRepository.incomingMessageSizeLimitKbFlow } returns flowOf(500)
         every { settingsRepository.notificationsEnabledFlow } returns flowOf(true)
         every { settingsRepository.blockUnknownSendersFlow } returns flowOf(false)
@@ -175,6 +176,25 @@ class SettingsViewModelTest {
         every { settingsRepository.telemetryHostModeEnabledFlow } returns flowOf(false)
         every { settingsRepository.telemetryAllowedRequestersFlow } returns flowOf(emptySet<String>())
         every { settingsRepository.includePrereleaseUpdates } returns MutableStateFlow(false)
+        every { settingsRepository.sortMessagesBySentTime } returns flowOf(false)
+        // SOS settings flows
+        every { settingsRepository.sosEnabled } returns flowOf(false)
+        every { settingsRepository.sosMessageTemplate } returns flowOf("SOS! I need help. This is an emergency.")
+        every { settingsRepository.sosCountdownSeconds } returns flowOf(5)
+        every { settingsRepository.sosIncludeLocation } returns flowOf(true)
+        every { settingsRepository.sosSilentAutoAnswer } returns flowOf(false)
+        every { settingsRepository.sosShowFloatingButton } returns flowOf(false)
+        every { settingsRepository.sosDeactivationPin } returns flowOf(null)
+        every { settingsRepository.sosPeriodicUpdates } returns flowOf(false)
+        every { settingsRepository.sosUpdateIntervalSeconds } returns flowOf(120)
+        every { settingsRepository.sosTriggerModes } returns flowOf(emptySet())
+        every { settingsRepository.sosShakeSensitivity } returns flowOf(2.5f)
+        every { settingsRepository.sosTapCount } returns flowOf(3)
+        every { settingsRepository.sosAudioEnabled } returns flowOf(false)
+        every { settingsRepository.sosAudioDurationSeconds } returns flowOf(30)
+        every { settingsRepository.sosFabOffsetX } returns flowOf(0f)
+        every { settingsRepository.sosFabOffsetY } returns flowOf(0f)
+        every { contactRepository.getSosContactsFlow() } returns flowOf(emptyList())
         coEvery { settingsRepository.getLastUpdateCheckTime() } returns System.currentTimeMillis()
 
         // Stub settings save methods
@@ -196,6 +216,7 @@ class SettingsViewModelTest {
         coEvery { settingsRepository.saveImageCompressionPreset(any()) } just Runs
         coEvery { settingsRepository.saveMapSourceHttpEnabled(any()) } just Runs
         coEvery { settingsRepository.saveMapSourceRmspEnabled(any()) } just Runs
+        coEvery { settingsRepository.saveMapMarkerDeclutterEnabled(any()) } just Runs
         coEvery { settingsRepository.getCustomThemeById(any()) } returns null
         coEvery { settingsRepository.saveNotificationsEnabled(any()) } just Runs
         coEvery { settingsRepository.saveBlockUnknownSenders(any()) } just Runs
@@ -219,7 +240,10 @@ class SettingsViewModelTest {
         coEvery { identityRepository.updateDisplayName(any(), any()) } returns Result.success(Unit)
         coEvery { identityRepository.updateIconAppearance(any(), any(), any(), any()) } returns Result.success(Unit)
 
-        coEvery { interfaceConfigManager.applyInterfaceChanges() } returns Result.success(Unit)
+        coEvery { interfaceConfigManager.applyInterfaceChanges(any()) } coAnswers {
+            firstArg<(() -> Unit)?>()?.invoke()
+            Result.success(Unit)
+        }
 
         // Mock ReticulumProtocol methods
         every { reticulumProtocol.networkStatus } returns networkStatusFlow
@@ -450,7 +474,7 @@ class SettingsViewModelTest {
 
             assertTrue("togglePreferOwnInstance should complete successfully", result.isSuccess)
             coVerify { settingsRepository.savePreferOwnInstance(true) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -482,7 +506,7 @@ class SettingsViewModelTest {
 
             assertTrue("switchToOwnInstanceAfterLoss should complete successfully", result.isSuccess)
             coVerify { settingsRepository.savePreferOwnInstance(true) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -495,7 +519,7 @@ class SettingsViewModelTest {
 
             assertTrue("switchToSharedInstance should complete successfully", result.isSuccess)
             coVerify { settingsRepository.savePreferOwnInstance(false) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -568,7 +592,7 @@ class SettingsViewModelTest {
             val result = runCatching { viewModel.saveRpcKey("abc123") }
 
             assertTrue("saveRpcKey should complete successfully", result.isSuccess)
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -581,7 +605,7 @@ class SettingsViewModelTest {
 
             assertTrue("saveRpcKey should complete successfully", result.isSuccess)
             // Should not call applyInterfaceChanges since not using shared instance
-            coVerify(exactly = 0) { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify(exactly = 0) { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     // endregion
@@ -655,7 +679,7 @@ class SettingsViewModelTest {
 
             assertTrue("restartService should complete successfully", result.isSuccess)
             // Verify the restart was triggered via interfaceConfigManager
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     // endregion
@@ -866,7 +890,7 @@ class SettingsViewModelTest {
             val result = runCatching { viewModel.restartService() }
 
             assertTrue("restartService should complete successfully", result.isSuccess)
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -1035,7 +1059,7 @@ class SettingsViewModelTest {
             assertTrue("switchToOwnInstanceAfterLoss should complete successfully", result.isSuccess)
             // Verify both preference save and restart are triggered
             coVerify { settingsRepository.savePreferOwnInstance(true) }
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
@@ -2044,14 +2068,14 @@ class SettingsViewModelTest {
             val result = runCatching { viewModel.setTransportNodeEnabled(false) }
 
             assertTrue("setTransportNodeEnabled should complete successfully", result.isSuccess)
-            coVerify { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test
     fun `setTransportNodeEnabled does not restart if already restarting`() =
         runTest {
             // Make applyInterfaceChanges suspend indefinitely so isRestarting stays true
-            coEvery { interfaceConfigManager.applyInterfaceChanges() } coAnswers {
+            coEvery { interfaceConfigManager.applyInterfaceChanges(any()) } coAnswers {
                 kotlinx.coroutines.delay(Long.MAX_VALUE)
                 Result.success(Unit)
             }
@@ -2076,7 +2100,7 @@ class SettingsViewModelTest {
             viewModel.setTransportNodeEnabled(true)
 
             // Should only have called applyInterfaceChanges once (from the first call)
-            coVerify(exactly = 1) { interfaceConfigManager.applyInterfaceChanges() }
+            coVerify(exactly = 1) { interfaceConfigManager.applyInterfaceChanges(any()) }
         }
 
     @Test

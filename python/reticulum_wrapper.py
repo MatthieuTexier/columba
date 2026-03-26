@@ -16,7 +16,7 @@ import importlib.util
 import traceback
 from logging_utils import log_debug, log_info, log_warning, log_error, log_separator
 from signal_quality import extract_signal_metrics, add_signal_to_message_event
-from interface_lookup import get_receiving_interface
+from interface_lookup import get_receiving_interface, format_interface_name
 
 # umsgpack is available via RNS dependencies (bundled with Chaquopy on Android)
 try:
@@ -82,10 +82,12 @@ LEGACY_LOCATION_FIELD = 7     # Legacy field ID for backwards compatibility
 
 # Command IDs for FIELD_COMMANDS (Sideband telemetry collector protocol)
 COMMAND_TELEMETRY_REQUEST = 0x01  # Request telemetry from collector
+COMMAND_SOS_STATE = 0x02          # SOS emergency state: ["active"], ["cancelled"], ["update"]
 
 # Sensor IDs (from Sideband sense.py)
 SID_TIME = 0x01
 SID_LOCATION = 0x02
+SID_BATTERY = 0x04
 
 
 # ============================================================================
@@ -194,7 +196,9 @@ def appearance_from_marker_symbol(symbol_key: str) -> Optional[list]:
 # ============================================================================
 
 def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_ms: int,
-                            altitude: float = 0.0, speed: float = 0.0, bearing: float = 0.0) -> bytes:
+                            altitude: float = 0.0, speed: float = 0.0, bearing: float = 0.0,
+                            battery_percent: int = None, battery_charging: bool = False,
+                            battery_temperature: float = 0.0) -> bytes:
     """
     Pack location data in Sideband Telemeter format for FIELD_TELEMETRY.
 
@@ -208,6 +212,9 @@ def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_m
         altitude: Altitude in meters (default 0.0)
         speed: Speed in km/h (default 0.0)
         bearing: Bearing/heading in degrees (default 0.0)
+        battery_percent: Optional battery charge level (0-100)
+        battery_charging: Whether the device is charging (default False)
+        battery_temperature: Battery temperature in Celsius (default 0.0)
 
     Returns:
         msgpack-packed bytes for FIELD_TELEMETRY
@@ -235,6 +242,10 @@ def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_m
         SID_TIME: timestamp_s,
         SID_LOCATION: location_packed,
     }
+
+    if battery_percent is not None:
+        # Sideband Battery format: [charge%, charging (bool), temperature_celsius]
+        telemetry[SID_BATTERY] = [battery_percent, battery_charging, battery_temperature]
 
     return umsgpack.packb(telemetry)
 
@@ -281,7 +292,7 @@ def unpack_location_telemetry(packed_data: bytes) -> Optional[Dict]:
                   f"bear={bearing:.1f}° acc={accuracy:.1f}m "
                   f"t={last_update}")
 
-        return {
+        result = {
             "type": "location_share",
             "lat": lat,
             "lng": lon,
@@ -291,6 +302,21 @@ def unpack_location_telemetry(packed_data: bytes) -> Optional[Dict]:
             "speed": speed,
             "bearing": bearing,
         }
+
+        # Extract battery data if present (Sideband format: [charge%, charging, temp])
+        if SID_BATTERY in telemetry:
+            try:
+                bat = telemetry[SID_BATTERY]
+                if isinstance(bat, (list, tuple)) and len(bat) >= 1:
+                    result["battery_percent"] = bat[0]
+                    if len(bat) >= 2:
+                        result["battery_charging"] = bat[1]
+                    if len(bat) >= 3:
+                        result["battery_temperature"] = bat[2]
+            except Exception:
+                pass
+
+        return result
     except Exception as e:
         log_warning("TelemetryHelper", "unpack_location_telemetry",
                    f"Failed to unpack telemetry: {e}")
@@ -596,6 +622,7 @@ class ReticulumWrapper:
             "lxmf.propagation": AnnounceHandler("lxmf.propagation", self._announce_handler),
             "nomadnetwork.node": AnnounceHandler("nomadnetwork.node", self._announce_handler),
             "rmsp.maps": AnnounceHandler("rmsp.maps", self._announce_handler),
+            "lxst.telephony": AnnounceHandler("lxst.telephony", self._announce_handler),
         }
 
         # RMSP client for map tile fetching over Reticulum
@@ -1217,8 +1244,6 @@ class ReticulumWrapper:
             if not hasattr(RNS.Transport, 'path_table') or not RNS.Transport.path_table:
                 return
 
-            current_time = time.time()
-            stale_threshold = 60  # Paths older than 60 seconds are considered stale
             stale_paths = []
 
             # Scan for stale BLE paths
@@ -1229,11 +1254,10 @@ class ReticulumWrapper:
 
                     # Check if this is a BLE path
                     if receiving_interface and "BLE" in str(type(receiving_interface).__name__):
-                        # Check for timestamp=0 bug or very old timestamps
+                        # Only clear paths with timestamp=0 (the actual Reticulum bug)
+                        # Paths with valid timestamps from prior sessions should be preserved
                         if timestamp == 0:
                             stale_paths.append((dest_hash, timestamp, "timestamp=0 (Unix epoch bug)"))
-                        elif (current_time - timestamp) > stale_threshold:
-                            stale_paths.append((dest_hash, timestamp, f"age={(current_time - timestamp):.0f}s (stale from previous session)"))
                 except (IndexError, TypeError) as e:
                     # Malformed path entry
                     log_debug("ReticulumWrapper", "_clear_stale_ble_paths", f"Skipping malformed path table entry: {e}")
@@ -2406,7 +2430,7 @@ class ReticulumWrapper:
             # Create announce event dict (Transport already stores identity/app_data)
             announce_event = {
                 'destination_hash': destination_hash,
-                'identity_hash': destination_hash,  # For single destinations
+                'identity_hash': announced_identity.hash if announced_identity else destination_hash,
                 'public_key': announced_identity.get_public_key() if announced_identity else b'',
                 'app_data': app_data if app_data else b'',
                 'display_name': display_name,  # Pre-parsed by LXMF (may be None)
@@ -2524,6 +2548,15 @@ class ReticulumWrapper:
                             log_warning("ReticulumWrapper", "shutdown", f"Warning - couldn't detach interface {iface}: {e}")
                 except Exception as e:
                     log_error("ReticulumWrapper", "shutdown", f"Warning - error detaching interfaces: {e}")
+
+            # Step 3.5: Persist transport data before clearing (paths, destinations)
+            if RETICULUM_AVAILABLE:
+                try:
+                    log_debug("ReticulumWrapper", "shutdown", "Persisting transport data before cleanup")
+                    RNS.Transport.persist_data()
+                    log_debug("ReticulumWrapper", "shutdown", "Transport data persisted")
+                except Exception as e:
+                    log_warning("ReticulumWrapper", "shutdown", f"Warning - couldn't persist transport data: {e}")
 
             # Step 4: Clear RNS singleton instance and Transport global state (critical!)
             # RNS uses class variables for singletons and global state tracking
@@ -3175,17 +3208,12 @@ class ReticulumWrapper:
                     # Only use if it's a real interface (has string name), not a Mock auto-attribute
                     receiving_interface = getattr(lxmf_message, 'receiving_interface', None)
                     if receiving_interface is not None:
-                        # Use class name to identify interface type (reliable, not user-configured)
-                        class_name = type(receiving_interface).__name__
-                        # AutoInterfacePeer -> AutoInterface, otherwise use class name directly
-                        if "AutoInterface" in class_name:
-                            interface_type = "AutoInterface"
-                        else:
-                            interface_type = class_name
-                        lxmf_message._columba_interface = interface_type
-                        captured_interface = True
-                        log_debug("ReticulumWrapper", "_on_lxmf_delivery",
-                                 f"📡 Got interface from LXMF message (opportunistic): {interface_type}")
+                        interface_name = format_interface_name(receiving_interface)
+                        if interface_name:
+                            lxmf_message._columba_interface = interface_name
+                            captured_interface = True
+                            log_debug("ReticulumWrapper", "_on_lxmf_delivery",
+                                     f"📡 Got interface from LXMF message (opportunistic): {interface_name}")
 
                         # Extract signal quality metrics from interface
                         rssi, snr = extract_signal_metrics(receiving_interface)
@@ -3218,16 +3246,12 @@ class ReticulumWrapper:
                                 path_entry = RNS.Transport.path_table.get(source_hash)
                                 if path_entry is not None and len(path_entry) > 5 and path_entry[5] is not None:
                                     interface_obj = path_entry[5]
-                                    # Use class name to identify interface type (reliable, not user-configured)
-                                    class_name = type(interface_obj).__name__
-                                    if "AutoInterface" in class_name:
-                                        interface_type = "AutoInterface"
-                                    else:
-                                        interface_type = class_name
-                                    lxmf_message._columba_interface = interface_type
-                                    captured_interface = True
-                                    log_debug("ReticulumWrapper", "_on_lxmf_delivery",
-                                             f"📡 Captured interface from path_table: {interface_type}")
+                                    interface_name = format_interface_name(interface_obj)
+                                    if interface_name:
+                                        lxmf_message._columba_interface = interface_name
+                                        captured_interface = True
+                                        log_debug("ReticulumWrapper", "_on_lxmf_delivery",
+                                                 f"📡 Captured interface from path_table: {interface_name}")
 
                                     # Extract signal quality metrics from interface
                                     rssi, snr = extract_signal_metrics(interface_obj)
@@ -3336,13 +3360,27 @@ class ReticulumWrapper:
                                 # Field 4: icon appearance (already parsed above)
                                 pass
                             elif key in (6, 7) and isinstance(value, (list, tuple)) and len(value) >= 2:
-                                # Field 6/7: image/audio
+                                # Field 6/7: image/audio as [format, bytes]
                                 if isinstance(value[1], bytes):
                                     if len(value[1]) > _MAX_INLINE_ATTACHMENT_BYTES:
                                         temp_path = self._write_attachment_staging(msg_hash, f"f{key}", value[1])
                                         fields_serialized[str(key)] = [value[0], None, temp_path]
                                     else:
                                         fields_serialized[str(key)] = [value[0], value[1].hex()]
+                            elif key == 7 and isinstance(value, bytes):
+                                # Field 7: raw audio bytes (no format wrapper)
+                                if len(value) > _MAX_INLINE_ATTACHMENT_BYTES:
+                                    temp_path = self._write_attachment_staging(msg_hash, "f7", value)
+                                    fields_serialized["7"] = ["m4a", None, temp_path]
+                                else:
+                                    fields_serialized["7"] = ["m4a", value.hex()]
+                            elif key == FIELD_COMMANDS and isinstance(value, list):
+                                # Field 9: commands — extract SOS state for Kotlin
+                                for cmd in value:
+                                    if isinstance(cmd, dict) and COMMAND_SOS_STATE in cmd:
+                                        args = cmd[COMMAND_SOS_STATE]
+                                        if isinstance(args, list) and len(args) > 0:
+                                            fields_serialized["sos_state"] = str(args[0])
                             else:
                                 fields_serialized[str(key)] = str(value)
                         if fields_serialized:
@@ -3353,6 +3391,14 @@ class ReticulumWrapper:
                     self.kotlin_message_received_callback(json.dumps(message_event))
                     log_info("ReticulumWrapper", "_on_lxmf_delivery",
                             "✅ Kotlin callback invoked with full message (event-driven)")
+
+                    # Remove from pending_inbound since callback succeeded.
+                    # This prevents the queue from growing unbounded and avoids
+                    # duplicate processing when drainPendingMessages() runs on restart.
+                    if hasattr(self.router, 'pending_inbound') and lxmf_message in self.router.pending_inbound:
+                        self.router.pending_inbound.remove(lxmf_message)
+                        log_debug("ReticulumWrapper", "_on_lxmf_delivery",
+                                 f"Removed message from pending_inbound after successful callback (queue now has {len(self.router.pending_inbound)} messages)")
                 except Exception as e:
                     log_error("ReticulumWrapper", "_on_lxmf_delivery",
                              f"⚠️ Error invoking Kotlin callback: {e}")
@@ -4393,7 +4439,10 @@ class ReticulumWrapper:
                                        image_data_path: str = None,
                                        file_attachments: list = None, file_attachment_paths: list = None,
                                        reply_to_message_id: str = None,
-                                       icon_name: str = None, icon_fg_color: str = None, icon_bg_color: str = None) -> Dict:
+                                       icon_name: str = None, icon_fg_color: str = None, icon_bg_color: str = None,
+                                       telemetry_json: str = None,
+                                       audio_data: bytes = None, audio_data_path: str = None,
+                                       sos_state: str = None) -> Dict:
         """
         Send an LXMF message with explicit delivery method.
 
@@ -4634,6 +4683,72 @@ class ReticulumWrapper:
                 ]
                 log_info("ReticulumWrapper", "send_lxmf_message_with_method",
                         f"📎 Adding icon appearance: {icon_name}, fg={icon_fg_color} ({fg_bytes.hex()}), bg={icon_bg_color} ({bg_bytes.hex()})")
+
+            # Add FIELD_TELEMETRY from JSON if provided (SOS messages with location + battery)
+            if telemetry_json:
+                try:
+                    import json
+                    tel = json.loads(str(telemetry_json))
+                    packed = pack_location_telemetry(
+                        lat=tel.get("lat", 0.0),
+                        lon=tel.get("lng", 0.0),
+                        accuracy=tel.get("acc", 0.0),
+                        timestamp_ms=tel.get("ts", 0),
+                        altitude=tel.get("altitude", 0.0),
+                        speed=tel.get("speed", 0.0),
+                        bearing=tel.get("bearing", 0.0),
+                        battery_percent=tel.get("battery_percent"),
+                        battery_charging=tel.get("battery_charging", False),
+                        battery_temperature=tel.get("battery_temperature", 0.0),
+                    )
+                    if fields is None:
+                        fields = {}
+                    # Store raw msgpack bytes — receiver calls unpackb() on this
+                    fields[FIELD_TELEMETRY] = packed
+                    log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                            f"📡 Adding FIELD_TELEMETRY: lat={tel.get('lat')}, lng={tel.get('lng')}, "
+                            f"battery={tel.get('battery_percent')}%")
+                except Exception as e:
+                    log_warning("ReticulumWrapper", "send_lxmf_message_with_method",
+                               f"Failed to pack telemetry from JSON: {e}")
+
+            # Add FIELD_AUDIO if audio data provided (SOS audio recording)
+            if audio_data_path:
+                try:
+                    import os
+                    with open(str(audio_data_path), 'rb') as f:
+                        audio_data = f.read()
+                    log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                            f"🎙️ Read audio from disk: {len(audio_data)} bytes")
+                    try:
+                        os.remove(str(audio_data_path))
+                    except Exception:
+                        pass
+                except Exception as e:
+                    log_warning("ReticulumWrapper", "send_lxmf_message_with_method",
+                               f"Failed to read audio from {audio_data_path}: {e}")
+                    audio_data = None
+
+            if audio_data:
+                if hasattr(audio_data, '__iter__') and not isinstance(audio_data, (bytes, bytearray)):
+                    audio_data = bytes(audio_data)
+                if fields is None:
+                    fields = {}
+                fields[FIELD_AUDIO] = ["m4a", audio_data]
+                log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                        f"🎙️ Attaching audio: {len(audio_data)} bytes, format=m4a, field_key={FIELD_AUDIO}")
+
+            # Add FIELD_COMMANDS for SOS state if provided
+            if sos_state:
+                if fields is None:
+                    fields = {}
+                sos_command = [{COMMAND_SOS_STATE: [str(sos_state)]}]
+                if FIELD_COMMANDS in fields:
+                    fields[FIELD_COMMANDS].extend(sos_command)
+                else:
+                    fields[FIELD_COMMANDS] = sos_command
+                log_info("ReticulumWrapper", "send_lxmf_message_with_method",
+                        f"🆘 Adding FIELD_COMMANDS SOS state: {sos_state}")
 
             # Create LXMF message with specified delivery method
             lxmf_message = LXMF.LXMessage(
@@ -6467,6 +6582,17 @@ class ReticulumWrapper:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def persist_transport_data(self) -> Dict:
+        """Persist Reticulum's transport data (path table, destinations) to disk."""
+        if not RETICULUM_AVAILABLE or not self.reticulum:
+            return {"success": False, "error": "Reticulum not available"}
+        try:
+            RNS.Transport.persist_data()
+            return {"success": True}
+        except Exception as e:
+            log_warning("ReticulumWrapper", "persist_transport_data", f"Error: {e}")
+            return {"success": False, "error": str(e)}
+
     def get_hop_count(self, dest_hash: bytes) -> Optional[int]:
         """Get hop count to destination"""
         if not RETICULUM_AVAILABLE or not self.reticulum:
@@ -7831,7 +7957,7 @@ class ReticulumWrapper:
                                 f"████ RNODE ONLINE STATUS CHANGED ████ [{interface_name}] online={is_online}")
                         if self.kotlin_rnode_bridge:
                             try:
-                                self.kotlin_rnode_bridge.notifyOnlineStatusChanged(is_online)
+                                self.kotlin_rnode_bridge.notifyOnlineStatusChanged(is_online, interface_name)
                             except Exception as e:
                                 log_error("ReticulumWrapper", "RNodeStatus",
                                         f"Failed to notify Kotlin of online status: {e}")
@@ -8398,6 +8524,35 @@ class ReticulumWrapper:
                 log_info("ReticulumWrapper", "clear_rmsp_servers", "Cleared all RMSP servers")
         except Exception as e:
             log_error("ReticulumWrapper", "clear_rmsp_servers", f"Error: {e}")
+
+    # ============================================================================
+    # Peer Blocking & Blackhole (delegated to blocking_manager.py)
+    # ============================================================================
+
+    def _get_blocking_manager(self):
+        """Lazy-init the blocking manager."""
+        if not hasattr(self, '_blocking_manager') or self._blocking_manager is None:
+            from blocking_manager import BlockingManager
+            self._blocking_manager = BlockingManager(self.router, self.reticulum)
+        return self._blocking_manager
+
+    def block_destination(self, destination_hash_hex):
+        return self._get_blocking_manager().block_destination(destination_hash_hex)
+
+    def unblock_destination(self, destination_hash_hex):
+        return self._get_blocking_manager().unblock_destination(destination_hash_hex)
+
+    def restore_blocked_destinations(self, hashes_list):
+        return self._get_blocking_manager().restore_blocked_destinations(hashes_list)
+
+    def blackhole_identity(self, identity_hash_hex):
+        return self._get_blocking_manager().blackhole_identity(identity_hash_hex)
+
+    def unblackhole_identity(self, identity_hash_hex):
+        return self._get_blocking_manager().unblackhole_identity(identity_hash_hex)
+
+    def is_transport_enabled(self):
+        return self._get_blocking_manager().is_transport_enabled()
 
     # ============================================================================
     # Protocol Version Information (for About screen)

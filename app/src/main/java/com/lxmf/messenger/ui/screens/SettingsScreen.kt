@@ -16,13 +16,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +51,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lxmf.messenger.ui.components.BackgroundLocationPermissionBottomSheet
 import com.lxmf.messenger.ui.components.LocationPermissionBottomSheet
+import com.lxmf.messenger.ui.components.ServiceRestartBanner
 import com.lxmf.messenger.ui.screens.settings.cards.AboutCard
 import com.lxmf.messenger.ui.screens.settings.cards.AutoAnnounceCard
 import com.lxmf.messenger.ui.screens.settings.cards.BatteryOptimizationCard
@@ -69,6 +67,7 @@ import com.lxmf.messenger.ui.screens.settings.cards.PrivacyCard
 import com.lxmf.messenger.ui.screens.settings.cards.RNodeFlasherCard
 import com.lxmf.messenger.ui.screens.settings.cards.ShareColumbaCard
 import com.lxmf.messenger.ui.screens.settings.cards.SharedInstanceBannerCard
+import com.lxmf.messenger.ui.screens.settings.cards.SosEmergencyCard
 import com.lxmf.messenger.ui.screens.settings.cards.ThemeSelectionCard
 import com.lxmf.messenger.ui.screens.settings.cards.VoiceCallPermissionsCard
 import com.lxmf.messenger.ui.screens.settings.cards.shouldShowSharedInstanceBanner
@@ -79,10 +78,10 @@ import com.lxmf.messenger.util.CrashReport
 import com.lxmf.messenger.util.CrashReportManager
 import com.lxmf.messenger.util.DeviceInfoUtil
 import com.lxmf.messenger.util.LocationPermissionManager
+import com.lxmf.messenger.viewmodel.BlockedUsersViewModel
 import com.lxmf.messenger.viewmodel.DebugViewModel
 import com.lxmf.messenger.viewmodel.SettingsCardId
 import com.lxmf.messenger.viewmodel.SettingsViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,8 +100,11 @@ fun SettingsScreen(
     onNavigateToAnnounces: (filterType: String?) -> Unit = {},
     onNavigateToFlasher: () -> Unit = {},
     onNavigateToApkSharing: () -> Unit = {},
+    onNavigateToBlockedUsers: () -> Unit = {},
 ) {
+    val blockedUsersViewModel: BlockedUsersViewModel = hiltViewModel()
     val state by viewModel.state.collectAsState()
+    val blockedPeerCount by blockedUsersViewModel.blockedPeerCount.collectAsState()
     val qrCodeData by debugViewModel.qrCodeData.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -164,12 +166,13 @@ fun SettingsScreen(
 
     // Refresh background permission state on lifecycle resume (e.g. returning from system settings)
     DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasForegroundPermission = LocationPermissionManager.hasPermission(context)
-                hasBackgroundPermission = LocationPermissionManager.hasBackgroundLocationPermission(context)
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    hasForegroundPermission = LocationPermissionManager.hasPermission(context)
+                    hasBackgroundPermission = LocationPermissionManager.hasBackgroundLocationPermission(context)
+                }
             }
-        }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -253,6 +256,10 @@ fun SettingsScreen(
                     )
                 }
 
+                if (state.isRestarting) {
+                    ServiceRestartBanner()
+                }
+
                 NetworkCard(
                     isExpanded = state.cardExpansionStates[SettingsCardId.NETWORK.name] ?: false,
                     onExpandedChange = { viewModel.toggleCardExpanded(SettingsCardId.NETWORK, it) },
@@ -276,6 +283,8 @@ fun SettingsScreen(
                     onExpandedChange = { viewModel.toggleCardExpanded(SettingsCardId.PRIVACY, it) },
                     blockUnknownSenders = state.blockUnknownSenders,
                     onBlockUnknownSendersChange = { viewModel.setBlockUnknownSenders(it) },
+                    blockedPeerCount = blockedPeerCount,
+                    onNavigateToBlockedUsers = onNavigateToBlockedUsers,
                 )
 
                 NotificationSettingsCard(
@@ -380,15 +389,17 @@ fun SettingsScreen(
                     onBackgroundPermissionClick = {
                         if (hasBackgroundPermission) {
                             // Already granted — open app info, guide user to Permissions > Location
-                            Toast.makeText(
-                                context,
-                                "Go to Permissions > Location to change",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                            val intent = Intent(
-                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                Uri.fromParts("package", context.packageName, null),
-                            )
+                            Toast
+                                .makeText(
+                                    context,
+                                    "Go to Permissions > Location to change",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            val intent =
+                                Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.fromParts("package", context.packageName, null),
+                                )
                             context.startActivity(intent)
                         } else if (LocationPermissionManager.hasPermission(context)) {
                             // Foreground granted but not background — show our custom sheet
@@ -399,6 +410,40 @@ fun SettingsScreen(
                             showTelemetryPermissionSheet = true
                         }
                     },
+                )
+
+                SosEmergencyCard(
+                    isExpanded = state.cardExpansionStates[SettingsCardId.SOS_EMERGENCY.name] ?: false,
+                    onExpandedChange = { viewModel.toggleCardExpanded(SettingsCardId.SOS_EMERGENCY, it) },
+                    sosEnabled = state.sosEnabled,
+                    onSosEnabledChange = { viewModel.setSosEnabled(it) },
+                    sosMessageTemplate = state.sosMessageTemplate,
+                    onSosMessageTemplateChange = { viewModel.setSosMessageTemplate(it) },
+                    sosCountdownSeconds = state.sosCountdownSeconds,
+                    onSosCountdownSecondsChange = { viewModel.setSosCountdownSeconds(it) },
+                    sosIncludeLocation = state.sosIncludeLocation,
+                    onSosIncludeLocationChange = { viewModel.setSosIncludeLocation(it) },
+                    sosSilentAutoAnswer = state.sosSilentAutoAnswer,
+                    onSosSilentAutoAnswerChange = { viewModel.setSosSilentAutoAnswer(it) },
+                    sosShowFloatingButton = state.sosShowFloatingButton,
+                    onSosShowFloatingButtonChange = { viewModel.setSosShowFloatingButton(it) },
+                    sosDeactivationPin = state.sosDeactivationPin,
+                    onSosDeactivationPinChange = { viewModel.setSosDeactivationPin(it) },
+                    sosPeriodicUpdates = state.sosPeriodicUpdates,
+                    onSosPeriodicUpdatesChange = { viewModel.setSosPeriodicUpdates(it) },
+                    sosUpdateIntervalSeconds = state.sosUpdateIntervalSeconds,
+                    onSosUpdateIntervalSecondsChange = { viewModel.setSosUpdateIntervalSeconds(it) },
+                    sosContactCount = state.sosContactCount,
+                    sosTriggerModes = state.sosTriggerModes,
+                    onSosTriggerModeToggle = { viewModel.toggleSosTriggerMode(it) },
+                    sosShakeSensitivity = state.sosShakeSensitivity,
+                    onSosShakeSensitivityChange = { viewModel.setSosShakeSensitivity(it) },
+                    sosTapCount = state.sosTapCount,
+                    onSosTapCountChange = { viewModel.setSosTapCount(it) },
+                    sosAudioEnabled = state.sosAudioEnabled,
+                    onSosAudioEnabledChange = { viewModel.setSosAudioEnabled(it) },
+                    sosAudioDurationSeconds = state.sosAudioDurationSeconds,
+                    onSosAudioDurationSecondsChange = { viewModel.setSosAudioDurationSeconds(it) },
                 )
 
                 MapSourcesCard(
@@ -445,6 +490,9 @@ fun SettingsScreen(
                     // Incoming message size limit
                     incomingMessageSizeLimitKb = state.incomingMessageSizeLimitKb,
                     onIncomingMessageSizeLimitChange = { viewModel.setIncomingMessageSizeLimit(it) },
+                    // Message sorting
+                    sortMessagesBySentTime = state.sortMessagesBySentTime,
+                    onSortMessagesBySentTimeToggle = { viewModel.setSortMessagesBySentTime(it) },
                 )
 
                 ImageCompressionCard(
@@ -580,12 +628,7 @@ fun SettingsScreen(
             )
         }
 
-        // Service Restart Dialog
-        if (state.isRestarting) {
-            ServiceRestartDialog(
-                onCancel = { viewModel.cancelRestart() },
-            )
-        }
+        // (restart banner is shown inline in the Column above)
 
         // Crash Report Dialog
         // Only show if activity is at least STARTED to prevent BadTokenException
@@ -672,48 +715,4 @@ fun SettingsScreen(
             )
         }
     }
-}
-
-@Composable
-private fun ServiceRestartDialog(onCancel: () -> Unit) {
-    var showCancel by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        delay(15_000)
-        showCancel = true
-    }
-
-    AlertDialog(
-        onDismissRequest = { if (showCancel) onCancel() },
-        icon = {
-            CircularProgressIndicator(
-                modifier = Modifier.size(48.dp),
-            )
-        },
-        title = { Text("Restarting Service") },
-        text = {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    "Restarting Reticulum network...",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "This may take a few seconds",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = {
-            if (showCancel) {
-                androidx.compose.material3.TextButton(onClick = onCancel) {
-                    Text("Cancel")
-                }
-            }
-        },
-    )
 }

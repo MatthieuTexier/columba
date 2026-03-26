@@ -185,6 +185,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = {},
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -208,6 +209,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = {},
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -229,6 +231,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = {},
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -252,6 +255,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = {},
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -277,6 +281,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = {},
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -302,6 +307,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = { markUnreadCalled = true },
                 onDeleteConversation = {},
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -327,6 +333,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = {},
                 onViewDetails = { viewDetailsCalled = true },
+                onBlockUser = {},
             )
         }
 
@@ -352,6 +359,7 @@ class ChatsScreenTest {
                 onMarkAsUnread = {},
                 onDeleteConversation = { deleteCalled = true },
                 onViewDetails = {},
+                onBlockUser = {},
             )
         }
 
@@ -1007,8 +1015,10 @@ class ChatsScreenTest {
         every { mockViewModel.manualSyncResult } returns MutableSharedFlow()
         every { mockViewModel.draftsMap } returns MutableStateFlow(emptyMap())
 
-        // Default: contacts are not saved
+        // Default: contacts are not saved, not SOS
         every { mockViewModel.isContactSaved(any()) } returns MutableStateFlow(false)
+        every { mockViewModel.isSosContact(any()) } returns MutableStateFlow(false)
+        every { mockViewModel.hasSosActive(any()) } returns MutableStateFlow(false)
 
         return mockViewModel
     }

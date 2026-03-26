@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -33,11 +35,13 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -63,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -74,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lxmf.messenger.R
 import com.lxmf.messenger.data.repository.Conversation
 import com.lxmf.messenger.service.SyncResult
 import com.lxmf.messenger.ui.components.ProfileIcon
@@ -81,8 +87,6 @@ import com.lxmf.messenger.ui.components.SearchableTopAppBar
 import com.lxmf.messenger.ui.components.StarToggleButton
 import com.lxmf.messenger.ui.components.SyncStatusBottomSheet
 import com.lxmf.messenger.ui.components.simpleVerticalScrollbar
-import androidx.compose.ui.res.stringResource
-import com.lxmf.messenger.R
 import com.lxmf.messenger.viewmodel.ChatsViewModel
 import com.lxmf.messenger.viewmodel.SharedImageViewModel
 import com.lxmf.messenger.viewmodel.SharedTextViewModel
@@ -106,6 +110,7 @@ fun ChatsScreen(
     val isSyncing by viewModel.isSyncing.collectAsState()
     val syncProgress by viewModel.syncProgress.collectAsState()
     val draftsMap by viewModel.draftsMap.collectAsState()
+    val isTransportEnabled by viewModel.isTransportEnabled.collectAsState()
     var isSearching by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -119,9 +124,10 @@ fun ChatsScreen(
     val pendingSharedText by sharedTextViewModel.sharedText.collectAsStateWithLifecycle()
     val pendingSharedImages by sharedImageViewModel.sharedImages.collectAsStateWithLifecycle()
 
-    // Delete dialog state (context menu state is now per-card)
+    // Delete/Block dialog state (context menu state is now per-card)
     var selectedConversation by remember { mutableStateOf<Conversation?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showBlockDialog by remember { mutableStateOf(false) }
 
     // Sync status bottom sheet state
     var showSyncStatusSheet by remember { mutableStateOf(false) }
@@ -234,6 +240,8 @@ fun ChatsScreen(
                         val hapticFeedback = LocalHapticFeedback.current
                         var showMenu by remember { mutableStateOf(false) }
                         val isSaved by viewModel.isContactSaved(conversation.peerHash).collectAsState()
+                        val isSos by viewModel.isSosContact(conversation.peerHash).collectAsState()
+                        val hasSosActive by viewModel.hasSosActive(conversation.peerHash).collectAsState()
                         var contactLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
                         // Fetch contact location when menu opens; clear on close
@@ -252,6 +260,8 @@ fun ChatsScreen(
                             ConversationCard(
                                 conversation = conversation,
                                 isSaved = isSaved,
+                                isSos = isSos,
+                                hasSosActive = hasSosActive,
                                 draftText = draftText,
                                 onClick = {
                                     if (pendingSharedText != null) {
@@ -284,6 +294,7 @@ fun ChatsScreen(
                                 expanded = showMenu,
                                 onDismiss = { showMenu = false },
                                 isSaved = isSaved,
+                                isSos = isSos,
                                 onSaveToContacts = {
                                     viewModel.saveToContacts(conversation)
                                     showMenu = false
@@ -313,6 +324,15 @@ fun ChatsScreen(
                                     showMenu = false
                                     onLocateOnMap(conversation.peerHash)
                                 },
+                                onToggleSos = {
+                                    viewModel.toggleSosTag(conversation.peerHash)
+                                    showMenu = false
+                                },
+                                onBlockUser = {
+                                    showMenu = false
+                                    selectedConversation = conversation
+                                    showBlockDialog = true
+                                },
                             )
                         }
                     }
@@ -339,6 +359,34 @@ fun ChatsScreen(
                 },
                 onDismiss = {
                     showDeleteDialog = false
+                },
+            )
+        }
+
+        // Block user confirmation dialog
+        val conversationToBlock = selectedConversation
+        if (showBlockDialog && conversationToBlock != null) {
+            BlockUserDialog(
+                peerName = conversationToBlock.displayName,
+                isTransportEnabled = isTransportEnabled,
+                onConfirm = { deleteMessages, blackholeEnabled ->
+                    viewModel.blockUser(
+                        peerHash = conversationToBlock.peerHash,
+                        peerIdentityHash =
+                            conversationToBlock.peerPublicKey?.let {
+                                com.lxmf.messenger.data.util.HashUtils
+                                    .computeIdentityHash(it)
+                            },
+                        displayName = conversationToBlock.displayName,
+                        deleteConversation = deleteMessages,
+                        blackholeEnabled = blackholeEnabled,
+                    )
+                    showBlockDialog = false
+                    selectedConversation = null
+                    Toast.makeText(context, "Blocked ${conversationToBlock.displayName}", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = {
+                    showBlockDialog = false
                 },
             )
         }
@@ -392,6 +440,8 @@ fun ChatsScreen(
 fun ConversationCard(
     conversation: Conversation,
     isSaved: Boolean = false,
+    isSos: Boolean = false,
+    hasSosActive: Boolean = false,
     draftText: String? = null,
     onClick: () -> Unit = {},
     onLongPress: () -> Unit = {},
@@ -406,10 +456,21 @@ fun ConversationCard(
                     onLongClick = onLongPress,
                 ),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (hasSosActive) 0.dp else 2.dp),
+        border =
+            if (hasSosActive) {
+                androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.error)
+            } else {
+                null
+            },
         colors =
             CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                containerColor =
+                    if (hasSosActive) {
+                        MaterialTheme.colorScheme.errorContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
             ),
     ) {
         Box {
@@ -465,6 +526,25 @@ fun ConversationCard(
                                     Modifier
                                         .size(16.dp)
                                         .align(Alignment.Center),
+                            )
+                        }
+                    }
+                    // SOS badge (top-start)
+                    if (isSos) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(20.dp)
+                                    .align(Alignment.TopStart)
+                                    .offset(x = (-4).dp, y = (-4).dp)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = "SOS Contact",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onError,
                             )
                         }
                     }
@@ -558,6 +638,7 @@ fun ConversationContextMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     isSaved: Boolean,
+    isSos: Boolean = false,
     onSaveToContacts: () -> Unit,
     onRemoveFromContacts: () -> Unit,
     onMarkAsUnread: () -> Unit,
@@ -565,6 +646,8 @@ fun ConversationContextMenu(
     onViewDetails: () -> Unit,
     hasLocation: Boolean = false,
     onLocateOnMap: () -> Unit = {},
+    onToggleSos: () -> Unit = {},
+    onBlockUser: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -641,6 +724,23 @@ fun ConversationContextMenu(
             )
         }
 
+        // SOS toggle (only shown if contact is saved)
+        if (isSaved) {
+            DropdownMenuItem(
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = if (isSos) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    )
+                },
+                text = {
+                    Text(if (isSos) "Unmark as SOS Contact" else "Mark as SOS Contact")
+                },
+                onClick = onToggleSos,
+            )
+        }
+
         HorizontalDivider()
 
         // Delete conversation
@@ -659,6 +759,24 @@ fun ConversationContextMenu(
                 )
             },
             onClick = onDeleteConversation,
+        )
+
+        // Block user
+        DropdownMenuItem(
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Block,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            },
+            text = {
+                Text(
+                    text = "Block User",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            },
+            onClick = onBlockUser,
         )
     }
 }
@@ -693,6 +811,89 @@ fun DeleteConversationDialog(
                     ),
             ) {
                 Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+fun BlockUserDialog(
+    peerName: String,
+    isTransportEnabled: Boolean = false,
+    onConfirm: (deleteMessages: Boolean, blackholeEnabled: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var deleteMessages by remember { mutableStateOf(false) }
+    var blackholeEnabled by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Block,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = {
+            Text("Block $peerName?")
+        },
+        text = {
+            Column {
+                Text("They won't be able to send you messages. Their conversation will be hidden from the chat list.")
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked = deleteMessages,
+                        onCheckedChange = { deleteMessages = it },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Also delete conversation and messages",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Checkbox(
+                        checked = blackholeEnabled,
+                        onCheckedChange = { blackholeEnabled = it },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Also blackhole (don't relay their announces)",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (blackholeEnabled && !isTransportEnabled) {
+                    Text(
+                        text = "Transport is currently disabled. This identity will be blackholed whenever transport is later enabled.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 48.dp, top = 4.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(deleteMessages, blackholeEnabled) },
+                colors =
+                    ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+            ) {
+                Text("Block")
             }
         },
         dismissButton = {

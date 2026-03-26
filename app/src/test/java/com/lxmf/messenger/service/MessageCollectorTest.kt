@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -39,6 +40,7 @@ class MessageCollectorTest {
     private lateinit var identityRepository: IdentityRepository
     private lateinit var notificationHelper: NotificationHelper
     private lateinit var peerIconDao: PeerIconDao
+    private lateinit var receivedLocationDao: com.lxmf.messenger.data.db.dao.ReceivedLocationDao
     private lateinit var conversationLinkManager: ConversationLinkManager
     private lateinit var messageCollector: MessageCollector
 
@@ -58,6 +60,8 @@ class MessageCollectorTest {
         identityRepository = mockk()
         notificationHelper = mockk()
         peerIconDao = mockk()
+        receivedLocationDao = mockk()
+        coEvery { receivedLocationDao.insert(any()) } returns Unit
         conversationLinkManager = mockk()
 
         // Default behavior for conversationLinkManager
@@ -66,6 +70,7 @@ class MessageCollectorTest {
 
         // Explicit stubs for notificationHelper (suspend function)
         coEvery { notificationHelper.notifyMessageReceived(any(), any(), any(), any()) } returns Unit
+        every { notificationHelper.isSosMessage(any()) } returns false
 
         // Explicit stubs for peerIconDao
         coEvery { peerIconDao.getIcon(any()) } returns null
@@ -88,6 +93,9 @@ class MessageCollectorTest {
         // Mock announce repository
         coEvery { announceRepository.getAnnounce(any()) } returns null
 
+        // Mock getReceivedMessageIds for pre-seeding (empty by default)
+        coEvery { conversationRepository.getReceivedMessageIds(since = any()) } returns emptyList()
+
         // Mock identity repository - return a mock active identity matching test destination
         coEvery { identityRepository.getActiveIdentitySync() } returns
             mockk {
@@ -103,6 +111,7 @@ class MessageCollectorTest {
                 identityRepository = identityRepository,
                 notificationHelper = notificationHelper,
                 peerIconDao = peerIconDao,
+                receivedLocationDao = receivedLocationDao,
                 conversationLinkManager = conversationLinkManager,
             )
     }
@@ -286,6 +295,45 @@ class MessageCollectorTest {
             assertTrue("updatePeerName should complete without throwing", result.isSuccess)
             coVerify(exactly = 0) {
                 conversationRepository.updatePeerName(any(), any())
+            }
+        }
+
+    // ========== Pre-seed Dedup Tests ==========
+
+    @Test
+    fun `pre-seeded message IDs prevent duplicate notifications on restart`() =
+        runBlocking {
+            // Given: A message that was already in the DB from a previous session
+            coEvery { conversationRepository.getReceivedMessageIds(since = any()) } returns listOf("already_notified_msg")
+
+            val testMessage =
+                ReceivedMessage(
+                    messageHash = "already_notified_msg",
+                    content = "Old message replayed",
+                    sourceHash = testSourceHash,
+                    destinationHash = testDestHash,
+                    timestamp = System.currentTimeMillis(),
+                    fieldsJson = null,
+                    publicKey = null,
+                )
+
+            // When: Start collecting (pre-seeds IDs) and replay the message
+            messageCollector.startCollecting()
+            kotlinx.coroutines.delay(100)
+            messageFlow.emit(testMessage)
+            kotlinx.coroutines.delay(200)
+
+            // Then: Message was skipped entirely - counter didn't increment
+            assertEquals(0, messageCollector.messagesCollected.value)
+
+            // And no notification was shown (message was pre-seeded as already processed)
+            coVerify(exactly = 0) {
+                notificationHelper.notifyMessageReceived(
+                    destinationHash = any(),
+                    peerName = any(),
+                    messagePreview = any(),
+                    isFavorite = any(),
+                )
             }
         }
 

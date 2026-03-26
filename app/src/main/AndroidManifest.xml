@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!-- WiFi hotspot for APK sharing without existing network (Android 13+) -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="tiramisu" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Battery optimization exemption for background mesh networking -->
@@ -45,6 +50,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Notification permission (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -63,11 +69,15 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Covers both ReticulumService and SosTriggerService (app-wide, not per-service) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Required to show incoming call screen over other apps when phone is unlocked -->
     <!-- and app is closed (Android 10+ background activity launch restriction) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Auto-start after device boot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Companion Device Manager (Android 12+) for RNode association -->
     <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
@@ -135,6 +145,14 @@
                 <data android:scheme="lxma" />
             </intent-filter>
 
+            <!-- Deep link handler for nomadnetwork:// URIs (NomadNet page links) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nomadnetwork" />
+            </intent-filter>
+
             <!-- USB device attached handler for RNode and compatible serial devices -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
@@ -143,6 +161,19 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
         </activity>
+
+        <!-- SOS Trigger Detection Service -->
+        <!-- Foreground service that keeps the process alive for accelerometer-based -->
+        <!-- SOS gesture detection (shake/tap) when the app is in the background -->
+        <service
+            android:name=".service.SosTriggerService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|microphone">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Emergency SOS gesture detection via accelerometer" />
+        </service>
 
         <!-- Reticulum Background Service -->
         <!-- Runs in separate process to allow clean restarts when applying config changes -->
@@ -166,6 +197,16 @@
                 <action android:name="android.companion.CompanionDeviceService" />
             </intent-filter>
         </service>
+
+        <!-- Auto-start services after device boot -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- FileProvider for sharing identity files -->
         <provider

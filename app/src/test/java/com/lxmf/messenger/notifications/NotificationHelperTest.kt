@@ -180,10 +180,11 @@ class NotificationHelperTest {
     // ========== Active Conversation Suppression Tests ==========
 
     @Test
-    fun `notifyMessageReceived suppressed when conversation is active`() =
+    fun `notifyMessageReceived suppressed when conversation is active and app in foreground`() =
         runBlocking {
-            // Given: This conversation is currently active (visible on screen)
+            // Given: This conversation is currently active AND app is in foreground
             activeConversationFlow.value = "abc123def456"
+            notificationHelper.isAppInForeground = { true }
 
             // When
             notificationHelper.notifyMessageReceived(
@@ -193,10 +194,31 @@ class NotificationHelperTest {
                 isFavorite = false,
             )
 
-            // Then: Notification NOT posted (suppressed)
+            // Then: Notification NOT posted (suppressed — user can see the conversation)
             val shadowNotificationManager = shadowOf(notificationManager)
             val notifications = shadowNotificationManager.allNotifications
-            assertTrue("Notification should be suppressed for active conversation", notifications.isEmpty())
+            assertTrue("Notification should be suppressed for active conversation in foreground", notifications.isEmpty())
+        }
+
+    @Test
+    fun `notifyMessageReceived not suppressed when conversation is active but app backgrounded`() =
+        runBlocking {
+            // Given: This conversation is active but app is backgrounded (screen off, etc.)
+            activeConversationFlow.value = "abc123def456"
+            notificationHelper.isAppInForeground = { false }
+
+            // When
+            notificationHelper.notifyMessageReceived(
+                destinationHash = "abc123def456",
+                peerName = "Active Conversation Peer",
+                messagePreview = "Hello",
+                isFavorite = false,
+            )
+
+            // Then: Notification IS posted (user can't see the conversation)
+            val shadowNotificationManager = shadowOf(notificationManager)
+            val notifications = shadowNotificationManager.allNotifications
+            assertTrue("Notification should be posted when app is backgrounded", notifications.isNotEmpty())
         }
 
     @Test
@@ -392,7 +414,7 @@ class NotificationHelperTest {
     // ========== Cancel Notification Tests ==========
 
     @Test
-    fun `cancelAllNotifications clears all notifications`() =
+    fun `cancelNotification with no args clears all notifications`() =
         runBlocking {
             // Given: Post a notification
             notificationHelper.notifyMessageReceived(
@@ -406,7 +428,7 @@ class NotificationHelperTest {
             assertTrue("Notification should exist", shadowNotificationManager.allNotifications.isNotEmpty())
 
             // When
-            notificationHelper.cancelAllNotifications()
+            notificationHelper.cancelNotification()
 
             // Then
             assertTrue("All notifications should be cancelled", shadowNotificationManager.allNotifications.isEmpty())
