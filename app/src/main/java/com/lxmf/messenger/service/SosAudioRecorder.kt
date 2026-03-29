@@ -60,19 +60,18 @@ class SosAudioRecorder
                     return true
                 }
 
+                val file = File(context.cacheDir, "sos_audio.m4a")
+                outputFile = file
+
+                @Suppress("DEPRECATION")
+                val mr =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        MediaRecorder(context)
+                    } else {
+                        MediaRecorder()
+                    }
+
                 return try {
-                    val file = File(context.cacheDir, "sos_audio.m4a")
-                    outputFile = file
-
-                    @Suppress("DEPRECATION")
-                    val mr =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            MediaRecorder(context)
-                        } else {
-                            MediaRecorder()
-                        }
-
-                    recorder = mr
                     mr.apply {
                         setAudioSource(MediaRecorder.AudioSource.MIC)
                         setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -84,11 +83,16 @@ class SosAudioRecorder
                         prepare()
                         start()
                     }
+                    // Assign only after start() succeeds — a concurrent cancel()/stopRecorder()
+                    // seeing recorder != null must find a MediaRecorder in the Started state.
+                    recorder = mr
                     Log.d(TAG, "Audio recording started: ${file.absolutePath}")
                     true
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start audio recording", e)
-                    cleanup()
+                    try { mr.release() } catch (_: Exception) {}
+                    outputFile?.delete()
+                    outputFile = null
                     false
                 }
             }
@@ -126,6 +130,7 @@ class SosAudioRecorder
                 bytes
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to read audio file", e)
+                file.delete()
                 null
             }
         }

@@ -350,10 +350,16 @@ class SosManager
             notificationHelper.showSosActiveNotification(sentCount, failedCount)
             Log.d(TAG, "SOS messages sent: $sentCount success, $failedCount failed")
 
+            // Check cancellation before launching jobs on scope (not children of triggerJob).
+            // Without this, deactivate() can cancel triggerJob but these jobs still launch.
+            kotlin.coroutines.coroutineContext.ensureActive()
+
             val periodicUpdates = settingsRepository.sosPeriodicUpdates.first()
             if (periodicUpdates) {
                 startPeriodicUpdates()
             }
+
+            kotlin.coroutines.coroutineContext.ensureActive()
 
             val audioEnabled = settingsRepository.sosAudioEnabled.first()
             if (audioEnabled) {
@@ -488,6 +494,8 @@ class SosManager
                             cont.resume(location, null)
                         }
                     }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Error getting location", e)
                 null
@@ -542,6 +550,8 @@ class SosManager
                             reticulumProtocol.saveIdentity(it, "default_identity")
                         }
                 }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading identity", e)
                 null
