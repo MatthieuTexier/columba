@@ -3363,6 +3363,13 @@ class ReticulumWrapper:
                                     fields_serialized["7"] = ["m4a", None, temp_path]
                                 else:
                                     fields_serialized["7"] = ["m4a", value.hex()]
+                            elif key == FIELD_TELEMETRY and isinstance(value, bytes):
+                                # Field 2: unpack telemetry so Kotlin gets a JSON object with lat/lng
+                                unpacked = unpack_location_telemetry(value)
+                                if unpacked:
+                                    fields_serialized["2"] = unpacked
+                                else:
+                                    fields_serialized["2"] = value.hex()
                             elif key == FIELD_COMMANDS and isinstance(value, list):
                                 # Field 9: commands — extract SOS state for Kotlin
                                 for cmd in value:
@@ -6356,6 +6363,13 @@ class ReticulumWrapper:
                                                  f"Failed to parse icon appearance: {e}")
                                         fields_serialized[str(key)] = str(value)
 
+                                elif key == FIELD_TELEMETRY and isinstance(value, bytes):
+                                    # Field 2: unpack telemetry so Kotlin gets a JSON object with lat/lng
+                                    unpacked = unpack_location_telemetry(value)
+                                    if unpacked:
+                                        fields_serialized["2"] = unpacked
+                                    else:
+                                        fields_serialized["2"] = value.hex()
                                 elif isinstance(value, (list, tuple)) and len(value) >= 2:
                                     # Image/audio format: [format_string, bytes_data]
                                     if isinstance(value[1], bytes):
