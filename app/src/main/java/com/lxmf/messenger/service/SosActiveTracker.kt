@@ -15,17 +15,28 @@ object SosActiveTracker {
     private val _activeSenders = MutableStateFlow<Set<String>>(emptySet())
     val activeSenders: StateFlow<Set<String>> = _activeSenders.asStateFlow()
 
+    // Senders explicitly removed since last clear — prevents stale restore after app restart
+    private val explicitlyRemoved = mutableSetOf<String>()
+
     fun addSender(hash: String) {
+        synchronized(explicitlyRemoved) { explicitlyRemoved.remove(hash) }
         _activeSenders.update { it + hash }
     }
 
     fun removeSender(hash: String) {
+        synchronized(explicitlyRemoved) { explicitlyRemoved.add(hash) }
         _activeSenders.update { it - hash }
     }
 
     fun isActive(hash: String): Flow<Boolean> = _activeSenders.map { it.contains(hash) }
 
     fun restoreFromSenders(senders: Set<String>) {
-        _activeSenders.update { it + senders }
+        val safeSet = synchronized(explicitlyRemoved) { senders - explicitlyRemoved }
+        _activeSenders.update { it + safeSet }
+    }
+
+    fun clear() {
+        synchronized(explicitlyRemoved) { explicitlyRemoved.clear() }
+        _activeSenders.value = emptySet()
     }
 }

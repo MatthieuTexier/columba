@@ -624,6 +624,7 @@ class MessageCollector
             // This ensures fresh data is fetched from database or announces when restarted
             peerNames.clear()
             processedMessageIds.clear()
+            SosActiveTracker.clear()
             Log.i(TAG, "Stopped message collection service (caches cleared)")
         }
 

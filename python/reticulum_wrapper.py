@@ -245,7 +245,9 @@ def pack_location_telemetry(lat: float, lon: float, accuracy: float, timestamp_m
 
     if battery_percent is not None:
         # Sideband Battery format: [charge%, charging (bool), temperature_celsius]
-        telemetry[SID_BATTERY] = [battery_percent, battery_charging, battery_temperature]
+        bp = max(0, min(100, int(battery_percent)))
+        bt = float(battery_temperature) if battery_temperature is not None else 0.0
+        telemetry[SID_BATTERY] = [bp, bool(battery_charging), bt]
 
     return umsgpack.packb(telemetry)
 
@@ -3368,6 +3370,8 @@ class ReticulumWrapper:
                                         args = cmd[COMMAND_SOS_STATE]
                                         if isinstance(args, list) and len(args) > 0:
                                             fields_serialized["sos_state"] = str(args[0])
+                                # Preserve raw commands field for non-SOS command processing
+                                fields_serialized[str(key)] = str(value)
                             else:
                                 fields_serialized[str(key)] = str(value)
                         if fields_serialized:
@@ -4677,13 +4681,13 @@ class ReticulumWrapper:
                     import json
                     tel = json.loads(str(telemetry_json))
                     packed = pack_location_telemetry(
-                        lat=tel.get("lat", 0.0),
-                        lon=tel.get("lng", 0.0),
-                        accuracy=tel.get("acc", 0.0),
-                        timestamp_ms=tel.get("ts", 0),
-                        altitude=tel.get("altitude", 0.0),
-                        speed=tel.get("speed", 0.0),
-                        bearing=tel.get("bearing", 0.0),
+                        lat=float(tel.get("lat", 0.0)),
+                        lon=float(tel.get("lng", 0.0)),
+                        accuracy=float(tel.get("acc", 0.0)),
+                        timestamp_ms=int(tel.get("ts", 0)),
+                        altitude=float(tel.get("altitude", 0.0)),
+                        speed=float(tel.get("speed", 0.0)),
+                        bearing=float(tel.get("bearing", 0.0)),
                         battery_percent=tel.get("battery_percent"),
                         battery_charging=tel.get("battery_charging", False),
                         battery_temperature=tel.get("battery_temperature", 0.0),
@@ -4703,8 +4707,9 @@ class ReticulumWrapper:
             if audio_data_path:
                 try:
                     import os
+                    _MAX_AUDIO_BYTES = 5 * 1024 * 1024  # 5 MB cap for SOS audio
                     with open(str(audio_data_path), 'rb') as f:
-                        audio_data = f.read()
+                        audio_data = f.read(_MAX_AUDIO_BYTES)
                     log_info("ReticulumWrapper", "send_lxmf_message_with_method",
                             f"🎙️ Read audio from disk: {len(audio_data)} bytes")
                     try:

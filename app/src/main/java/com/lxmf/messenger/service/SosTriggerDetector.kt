@@ -92,7 +92,7 @@ class SosTriggerDetector
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-        private var isSensorListening = false
+        @Volatile private var isSensorListening = false
         private var isPowerButtonListening = false
 
         /** Active trigger modes. Override in tests. */
@@ -279,6 +279,7 @@ class SosTriggerDetector
         }
 
         override fun onSensorChanged(event: SensorEvent) {
+            if (!isSensorListening) return
             if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
             val x = event.values[0]
@@ -377,12 +378,13 @@ class SosTriggerDetector
                     ) {
                         // Valid short spike with sufficient gap from previous tap
                         lastTapRegisteredTime = now
-                        tapTimestamps.add(now)
-                        tapTimestamps.removeAll { now - it > TAP_WINDOW_MS }
-
-                        Log.d(TAG, "Tap registered (spike ${spikeDuration}ms), count=${tapTimestamps.size}/$requiredTapCount")
-
-                        if (tapTimestamps.size >= requiredTapCount) {
+                        val triggered = synchronized(tapTimestamps) {
+                            tapTimestamps.add(now)
+                            tapTimestamps.removeAll { now - it > TAP_WINDOW_MS }
+                            Log.d(TAG, "Tap registered (spike ${spikeDuration}ms), count=${tapTimestamps.size}/$requiredTapCount")
+                            tapTimestamps.size >= requiredTapCount
+                        }
+                        if (triggered) {
                             Log.d(TAG, "Tap pattern detected! Triggering SOS")
                             lastTapTriggerTime = now
                             resetTapState()
@@ -400,15 +402,16 @@ class SosTriggerDetector
         internal fun handlePowerPress(now: Long) {
             if (now - lastPowerTriggerTime < POWER_COOLDOWN_MS) return
 
-            powerPressTimestamps.add(now)
-            powerPressTimestamps.removeAll { now - it > POWER_PRESS_WINDOW_MS }
-
-            Log.d(TAG, "Power press registered, count=${powerPressTimestamps.size}/$POWER_PRESS_COUNT")
-
-            if (powerPressTimestamps.size >= POWER_PRESS_COUNT) {
+            val triggered = synchronized(powerPressTimestamps) {
+                powerPressTimestamps.add(now)
+                powerPressTimestamps.removeAll { now - it > POWER_PRESS_WINDOW_MS }
+                Log.d(TAG, "Power press registered, count=${powerPressTimestamps.size}/$POWER_PRESS_COUNT")
+                powerPressTimestamps.size >= POWER_PRESS_COUNT
+            }
+            if (triggered) {
                 Log.d(TAG, "Power button pattern detected! Triggering SOS")
                 lastPowerTriggerTime = now
-                powerPressTimestamps.clear()
+                synchronized(powerPressTimestamps) { powerPressTimestamps.clear() }
                 sosManager.trigger()
             }
         }

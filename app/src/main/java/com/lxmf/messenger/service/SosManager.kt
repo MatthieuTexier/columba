@@ -92,10 +92,10 @@ class SosManager
         val state: StateFlow<SosState> = _state.asStateFlow()
 
         private val triggerMutex = kotlinx.coroutines.sync.Mutex()
-        private var triggerJob: Job? = null
-        private var countdownJob: Job? = null
-        private var periodicUpdateJob: Job? = null
-        private var audioRecordingJob: Job? = null
+        @Volatile private var triggerJob: Job? = null
+        @Volatile private var countdownJob: Job? = null
+        @Volatile private var periodicUpdateJob: Job? = null
+        @Volatile private var audioRecordingJob: Job? = null
 
         @Volatile private var cachedDeactivationPin: String? = null
 

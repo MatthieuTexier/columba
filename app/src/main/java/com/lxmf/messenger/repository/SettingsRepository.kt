@@ -2125,9 +2125,11 @@ class SettingsRepository
                     }
                 }.distinctUntilChanged()
 
+        @Suppress("DEPRECATION")
         suspend fun setSosTriggerModes(modes: Set<String>) {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.SOS_TRIGGER_MODES] = modes
+                preferences.remove(PreferencesKeys.SOS_TRIGGER_MODE_LEGACY)
             }
         }
 
