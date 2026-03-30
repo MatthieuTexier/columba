@@ -368,14 +368,14 @@ class SosManager
             kotlin.coroutines.coroutineContext.ensureActive()
 
             val periodicUpdates = settingsRepository.sosPeriodicUpdates.first()
-            if (periodicUpdates) {
+            if (periodicUpdates && _state.value is SosState.Active) {
                 startPeriodicUpdates()
             }
 
             kotlin.coroutines.coroutineContext.ensureActive()
 
             val audioEnabled = settingsRepository.sosAudioEnabled.first()
-            if (audioEnabled) {
+            if (audioEnabled && _state.value is SosState.Active) {
                 startAudioRecording(identity, contacts.map { it.destinationHash })
             }
         }
