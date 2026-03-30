@@ -108,9 +108,13 @@ class SosAudioRecorder
             synchronized(lock) {
                 try {
                     recorder?.stop()
-                    recorder?.release()
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to stop recorder", e)
+                }
+                try {
+                    recorder?.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to release recorder", e)
                 }
                 recorder = null
             }
