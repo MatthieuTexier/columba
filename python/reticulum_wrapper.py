@@ -6392,7 +6392,7 @@ class ReticulumWrapper:
                                     fields_serialized[str(key)] = value.hex()
                                 else:
                                     fields_serialized[str(key)] = str(value)
-                            message_event['fields'] = fields_serialized
+                            message_event['fields'] = json.dumps(fields_serialized)
                             log_info("ReticulumWrapper", "poll_received_messages", f"📎 Message has {len(fields_serialized)} field(s): {list(fields_serialized.keys())}")
 
                         new_messages.append(message_event)

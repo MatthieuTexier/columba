@@ -462,7 +462,7 @@ class SosManager
                 scope.launch {
                     val durationSeconds = settingsRepository.sosAudioDurationSeconds.first()
 
-                    val started = withContext(Dispatchers.IO) { audioRecorder.start() }
+                    val started = withContext(Dispatchers.Main) { audioRecorder.start() }
                     if (!started) {
                         Log.w(TAG, "Audio recording failed to start")
                         return@launch
@@ -470,6 +470,12 @@ class SosManager
 
                     Log.d(TAG, "SOS audio recording for ${durationSeconds}s")
                     delay(durationSeconds * 1_000L)
+
+                    if (_state.value !is SosState.Active) {
+                        Log.d(TAG, "SOS deactivated during audio recording, discarding")
+                        withContext(Dispatchers.Main) { audioRecorder.cancel() }
+                        return@launch
+                    }
 
                     withContext(Dispatchers.Main) { audioRecorder.stopRecorder() }
                     val audioBytes = withContext(Dispatchers.IO) { audioRecorder.readAndDeleteOutputFile() }
