@@ -18,6 +18,8 @@ object LocationServiceCoordinator {
 
     private val activeReasons = mutableSetOf<String>()
 
+    fun isAcquired(reason: String): Boolean = synchronized(activeReasons) { reason in activeReasons }
+
     fun acquire(context: Context, reason: String) {
         synchronized(activeReasons) {
             val wasEmpty = activeReasons.isEmpty()

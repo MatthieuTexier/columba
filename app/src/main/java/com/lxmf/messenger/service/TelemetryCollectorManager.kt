@@ -250,6 +250,7 @@ class TelemetryCollectorManager
                         _isRequestEnabled.value = enabled
                         Log.d(TAG, "Request enabled: $enabled")
                         restartPeriodicRequest()
+                        updateLocationTracking()
                     }
             }
             launch {
@@ -323,14 +324,21 @@ class TelemetryCollectorManager
 
         private fun shouldTrackLocation(): Boolean = _isEnabled.value && _collectorAddress.value != null
 
+        /** Whether any telemetry activity (send or request) needs the process kept alive. */
+        private fun needsForegroundService(): Boolean =
+            _collectorAddress.value != null && (_isEnabled.value || _isRequestEnabled.value)
+
         /** Update location tracking and coordinate the foreground service lifecycle. */
         private fun updateLocationTracking() {
             val shouldTrack = shouldTrackLocation()
-            val wasTracking = locationTracker.isTracking
             locationTracker.update(shouldTrack)
-            if (shouldTrack && !wasTracking) {
+
+            // Foreground service is needed for both send (GPS) and request-only (periodic polling)
+            val needsService = needsForegroundService()
+            val hasService = LocationServiceCoordinator.isAcquired(LocationServiceCoordinator.REASON_TELEMETRY)
+            if (needsService && !hasService) {
                 LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_TELEMETRY)
-            } else if (!shouldTrack && wasTracking) {
+            } else if (!needsService && hasService) {
                 LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
             }
         }
