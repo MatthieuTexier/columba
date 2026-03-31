@@ -1697,6 +1697,10 @@ object DatabaseModule {
                     "ALTER TABLE received_locations ADD COLUMN source TEXT NOT NULL DEFAULT 'location_sharing'",
                 )
                 database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS idx_received_locations_source " +
+                        "ON received_locations(source, senderHash, timestamp)",
+                )
+                database.execSQL(
                     "CREATE TABLE IF NOT EXISTS interface_first_seen (" +
                         "interfaceId TEXT NOT NULL PRIMARY KEY, " +
                         "firstSeenTimestamp INTEGER NOT NULL)",

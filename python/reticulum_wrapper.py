@@ -6297,6 +6297,13 @@ class ReticulumWrapper:
                                         fields_serialized["2"] = unpacked
                                     else:
                                         fields_serialized["2"] = value.hex()
+                                elif key == FIELD_COMMANDS and isinstance(value, list):
+                                    # Field 9: extract SOS state for Kotlin (same as callback path)
+                                    for cmd in value:
+                                        if isinstance(cmd, dict) and COMMAND_SOS_STATE in cmd:
+                                            args = cmd[COMMAND_SOS_STATE]
+                                            if isinstance(args, list) and len(args) > 0:
+                                                fields_serialized["sos_state"] = str(args[0])
                                 elif isinstance(value, (list, tuple)) and len(value) >= 2:
                                     # Image/audio format: [format_string, bytes_data]
                                     if isinstance(value[1], bytes):

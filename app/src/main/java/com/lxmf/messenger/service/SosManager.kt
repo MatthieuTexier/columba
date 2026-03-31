@@ -204,7 +204,9 @@ class SosManager
         fun deactivate(pin: String? = null): Boolean {
             if (_state.value !is SosState.Active) return false
 
+            // Read PIN synchronously if cache hasn't been populated yet (brief window at startup)
             val requiredPin = cachedDeactivationPin
+                ?: kotlinx.coroutines.runBlocking { settingsRepository.sosDeactivationPin.first() }
             if (!requiredPin.isNullOrBlank() && requiredPin != pin) {
                 Log.d(TAG, "SOS deactivation PIN mismatch")
                 return false
