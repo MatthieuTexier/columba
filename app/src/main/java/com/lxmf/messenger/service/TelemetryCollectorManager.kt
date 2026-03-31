@@ -183,7 +183,7 @@ class TelemetryCollectorManager
             // Start periodic sending and requesting
             restartPeriodicSend()
             restartPeriodicRequest()
-            locationTracker.update(shouldTrackLocation())
+            updateLocationTracking()
         }
 
         private fun CoroutineScope.launchSendSettingsObservers() {
@@ -211,7 +211,7 @@ class TelemetryCollectorManager
                         Log.d(TAG, "Collector address updated: ${address?.take(16) ?: "none"}")
                         restartPeriodicSend()
                         restartPeriodicRequest()
-                        locationTracker.update(shouldTrackLocation())
+                        updateLocationTracking()
                     }
             }
             launch {
@@ -221,7 +221,7 @@ class TelemetryCollectorManager
                         _isEnabled.value = enabled
                         Log.d(TAG, "Collector enabled: $enabled")
                         restartPeriodicSend()
-                        locationTracker.update(shouldTrackLocation())
+                        updateLocationTracking()
                     }
             }
             launch {
@@ -312,6 +312,9 @@ class TelemetryCollectorManager
             settingsObserverJob?.cancel()
             periodicSendJob?.cancel()
             periodicRequestJob?.cancel()
+            if (locationTracker.isTracking) {
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            }
             locationTracker.stop()
             settingsObserverJob = null
             periodicSendJob = null
@@ -319,6 +322,18 @@ class TelemetryCollectorManager
         }
 
         private fun shouldTrackLocation(): Boolean = _isEnabled.value && _collectorAddress.value != null
+
+        /** Update location tracking and coordinate the foreground service lifecycle. */
+        private fun updateLocationTracking() {
+            val shouldTrack = shouldTrackLocation()
+            val wasTracking = locationTracker.isTracking
+            locationTracker.update(shouldTrack)
+            if (shouldTrack && !wasTracking) {
+                LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            } else if (!shouldTrack && wasTracking) {
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            }
+        }
 
         /**
          * Update the collector address.
