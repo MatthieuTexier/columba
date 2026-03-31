@@ -141,7 +141,7 @@ internal class TelemetryLocationTracker(
 
                 val request =
                     LocationRequest
-                        .Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, TRACKING_UPDATE_INTERVAL_MS)
+                        .Builder(Priority.PRIORITY_HIGH_ACCURACY, TRACKING_UPDATE_INTERVAL_MS)
                         .setMinUpdateIntervalMillis(TRACKING_MIN_UPDATE_INTERVAL_MS)
                         .build()
 

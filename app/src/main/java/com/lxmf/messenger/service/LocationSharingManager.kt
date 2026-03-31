@@ -181,6 +181,9 @@ class LocationSharingManager
                 }
             }
 
+            // Ensure foreground service is running for Doze-resistant GPS
+            LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_SHARING)
+
             // Start location updates if not already running
             if (locationUpdateJob == null || locationUpdateJob?.isActive != true) {
                 startLocationUpdates()
@@ -268,6 +271,7 @@ class LocationSharingManager
                 stopLocationUpdates()
                 sessionCheckJob?.cancel()
                 sessionCheckJob = null
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
             }
 
             Log.d(TAG, "Stopped sharing, remaining sessions: ${updated.size}")
@@ -338,7 +342,7 @@ class LocationSharingManager
                             val locationRequest =
                                 LocationRequest
                                     .Builder(
-                                        Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                                        Priority.PRIORITY_HIGH_ACCURACY,
                                         LOCATION_UPDATE_INTERVAL_MS,
                                     ).apply {
                                         setMinUpdateIntervalMillis(LOCATION_MIN_UPDATE_INTERVAL_MS)
@@ -421,6 +425,7 @@ class LocationSharingManager
 
                 if (active.isEmpty()) {
                     stopLocationUpdates()
+                    LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                 }
 
                 _sharingEvents.emit(SharingEvent.SessionsExpired(expired.size))

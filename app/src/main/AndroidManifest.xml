@@ -51,6 +51,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!-- Notification permission (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -162,6 +163,7 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
+<<<<<<< HEAD
         <!-- SOS Trigger Detection Service -->
         <!-- Foreground service that keeps the process alive for accelerometer-based -->
         <!-- SOS gesture detection (shake/tap) when the app is in the background -->
@@ -174,6 +176,15 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Emergency SOS gesture detection via accelerometer" />
         </service>
+
+        <!-- Location Foreground Service -->
+        <!-- Keeps the main process alive during Doze so GPS callbacks continue -->
+        <!-- Only runs when location sharing or telemetry collection is active -->
+        <service
+            android:name=".service.LocationForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <!-- Reticulum Background Service -->
         <!-- Runs in separate process to allow clean restarts when applying config changes -->
