@@ -163,7 +163,6 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
-<<<<<<< HEAD
         <!-- SOS Trigger Detection Service -->
         <!-- Foreground service that keeps the process alive for accelerometer-based -->
         <!-- SOS gesture detection (shake/tap) when the app is in the background -->

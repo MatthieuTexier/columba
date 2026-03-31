@@ -1958,7 +1958,6 @@ class SettingsRepository
             }
         }
 
-<<<<<<< HEAD
         // ========== SOS Emergency Settings ==========
 
         val sosEnabled: Flow<Boolean> =
