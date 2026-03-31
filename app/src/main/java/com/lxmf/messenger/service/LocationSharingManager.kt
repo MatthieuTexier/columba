@@ -368,6 +368,9 @@ class LocationSharingManager
                     } catch (e: SecurityException) {
                         Log.e(TAG, "Location permission not granted", e)
                         _sharingEvents.emit(SharingEvent.Error("Location permission required"))
+                        _activeSessions.value = emptyList()
+                        _isSharing.value = false
+                        LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                     }
                 }
         }
