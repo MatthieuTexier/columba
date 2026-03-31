@@ -136,8 +136,10 @@ class LocationSharingManager
          */
         @SuppressLint("MissingPermission")
         fun restoreIfActive() {
+            if (_isSharing.value) return // already active, don't clobber
             scope.launch {
                 try {
+                    if (_isSharing.value) return@launch // re-check after dispatch
                     val json = settingsRepository.getLocationSharingSessions() ?: return@launch
                     val sessions = deserializeSessions(json)
                     if (sessions.isEmpty()) return@launch
@@ -154,12 +156,17 @@ class LocationSharingManager
                     _isSharing.value = true
 
                     LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_SHARING)
-                    startLocationUpdates()
-                    startSessionCheck()
+                    if (locationUpdateJob == null || locationUpdateJob?.isActive != true) {
+                        startLocationUpdates()
+                    }
+                    if (sessionCheckJob == null || sessionCheckJob?.isActive != true) {
+                        startSessionCheck()
+                    }
 
                     Log.d(TAG, "Restored ${active.size} sharing sessions from persistence")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to restore sharing sessions", e)
+                    Log.e(TAG, "Failed to restore sharing sessions, clearing", e)
+                    settingsRepository.clearLocationSharingSessions()
                 }
             }
         }
@@ -444,6 +451,9 @@ class LocationSharingManager
                         _sharingEvents.emit(SharingEvent.Error("Location permission required"))
                         _activeSessions.value = emptyList()
                         _isSharing.value = false
+                        sessionCheckJob?.cancel()
+                        sessionCheckJob = null
+                        persistSessions()
                         LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                     }
                 }
@@ -502,6 +512,8 @@ class LocationSharingManager
 
                 if (active.isEmpty()) {
                     stopLocationUpdates()
+                    sessionCheckJob?.cancel()
+                    sessionCheckJob = null
                     LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                 }
 

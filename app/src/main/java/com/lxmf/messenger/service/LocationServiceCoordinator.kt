@@ -26,10 +26,23 @@ object LocationServiceCoordinator {
             activeReasons.add(reason)
             if (wasEmpty) {
                 Log.d(TAG, "Starting location foreground service (reason: $reason)")
-                LocationForegroundService.start(context)
+                try {
+                    LocationForegroundService.start(context)
+                } catch (e: Exception) {
+                    activeReasons.remove(reason)
+                    Log.e(TAG, "Failed to start service, rolled back '$reason'", e)
+                }
             } else {
                 Log.d(TAG, "Location service already running, added reason: $reason (active: $activeReasons)")
             }
+        }
+    }
+
+    /** Called by the service when it fails to start foreground and self-destructs. */
+    fun clearAll() {
+        synchronized(activeReasons) {
+            Log.w(TAG, "Clearing all reasons due to service failure (was: $activeReasons)")
+            activeReasons.clear()
         }
     }
 

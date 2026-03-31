@@ -57,6 +57,7 @@ class LocationForegroundService : Service() {
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Cannot start: location permission not granted", e)
+            LocationServiceCoordinator.clearAll()
             stopSelf()
             return START_NOT_STICKY
         }

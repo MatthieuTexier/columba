@@ -310,16 +310,20 @@ class TelemetryCollectorManager
          */
         fun stop() {
             Log.d(TAG, "Stopping TelemetryCollectorManager")
+            // Poison state first so straggling flow collectors won't re-acquire the service
+            _isEnabled.value = false
+            _isRequestEnabled.value = false
+            _collectorAddress.value = null
             settingsObserverJob?.cancel()
             periodicSendJob?.cancel()
             periodicRequestJob?.cancel()
-            if (locationTracker.isTracking) {
-                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
-            }
-            locationTracker.stop()
             settingsObserverJob = null
             periodicSendJob = null
             periodicRequestJob = null
+            locationTracker.stop()
+            if (LocationServiceCoordinator.isAcquired(LocationServiceCoordinator.REASON_TELEMETRY)) {
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            }
         }
 
         private fun shouldTrackLocation(): Boolean = _isEnabled.value && _collectorAddress.value != null
