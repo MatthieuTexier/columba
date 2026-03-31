@@ -28,8 +28,11 @@ class LocationForegroundService : Service() {
         private const val CHANNEL_ID = "location_sharing"
         private const val NOTIFICATION_ID = 1004
 
-        fun start(context: Context) {
+        private const val EXTRA_TEXT = "notification_text"
+
+        fun start(context: Context, notificationText: String = "Location active") {
             val intent = Intent(context, LocationForegroundService::class.java)
+                .putExtra(EXTRA_TEXT, notificationText)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -48,7 +51,8 @@ class LocationForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = buildNotification("Location sharing active")
+        val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Location active"
+        val notification = buildNotification(text)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)

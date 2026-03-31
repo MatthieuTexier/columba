@@ -24,16 +24,19 @@ object LocationServiceCoordinator {
         synchronized(activeReasons) {
             val wasEmpty = activeReasons.isEmpty()
             activeReasons.add(reason)
+            val text = notificationText()
             if (wasEmpty) {
                 Log.d(TAG, "Starting location foreground service (reason: $reason)")
                 try {
-                    LocationForegroundService.start(context)
+                    LocationForegroundService.start(context, text)
                 } catch (e: Exception) {
                     activeReasons.remove(reason)
                     Log.e(TAG, "Failed to start service, rolled back '$reason'", e)
                 }
             } else {
-                Log.d(TAG, "Location service already running, added reason: $reason (active: $activeReasons)")
+                // Update notification text to reflect new reason
+                LocationForegroundService.start(context, text)
+                Log.d(TAG, "Location service updated, added reason: $reason (active: $activeReasons)")
             }
         }
     }
@@ -56,8 +59,18 @@ object LocationServiceCoordinator {
                 Log.d(TAG, "Stopping location foreground service (released: $reason)")
                 LocationForegroundService.stop(context)
             } else {
-                Log.d(TAG, "Location service still needed (released: $reason, remaining: $activeReasons)")
+                // Update notification text to reflect remaining reasons
+                LocationForegroundService.start(context, notificationText())
+                Log.d(TAG, "Location service updated (released: $reason, remaining: $activeReasons)")
             }
         }
+    }
+
+    private fun notificationText(): String = when {
+        REASON_SHARING in activeReasons && REASON_TELEMETRY in activeReasons ->
+            "Location sharing & telemetry active"
+        REASON_SHARING in activeReasons -> "Location sharing active"
+        REASON_TELEMETRY in activeReasons -> "Telemetry collection active"
+        else -> "Location active"
     }
 }
