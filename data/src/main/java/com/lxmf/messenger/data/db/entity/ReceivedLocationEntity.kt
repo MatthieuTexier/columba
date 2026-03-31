@@ -32,6 +32,7 @@ data class ReceivedLocationEntity(
     val receivedAt: Long, // When we received this update
     val approximateRadius: Int = 0, // Coarsening radius in meters (0 = precise)
     val appearanceJson: String? = null, // Icon appearance JSON: {"icon_name":"car","foreground_color":"RRGGBB","background_color":"RRGGBB"}
+    @androidx.room.ColumnInfo(defaultValue = "location_sharing")
     val source: String = SOURCE_LOCATION_SHARING,
 ) {
     companion object {
