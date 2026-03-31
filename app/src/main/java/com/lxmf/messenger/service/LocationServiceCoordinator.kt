@@ -33,7 +33,10 @@ object LocationServiceCoordinator {
 
     fun release(context: Context, reason: String) {
         synchronized(activeReasons) {
-            activeReasons.remove(reason)
+            if (!activeReasons.remove(reason)) {
+                Log.d(TAG, "release() for '$reason' — not acquired, ignoring")
+                return
+            }
             if (activeReasons.isEmpty()) {
                 Log.d(TAG, "Stopping location foreground service (released: $reason)")
                 LocationForegroundService.stop(context)

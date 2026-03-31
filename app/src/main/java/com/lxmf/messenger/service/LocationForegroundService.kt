@@ -49,13 +49,20 @@ class LocationForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = buildNotification("Location sharing active")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Cannot start: location permission not granted", e)
+            stopSelf()
+            return START_NOT_STICKY
         }
         Log.d(TAG, "Location foreground service started")
-        return START_STICKY
+        // NOT_STICKY: don't restart after process death — coordinator will re-acquire
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
