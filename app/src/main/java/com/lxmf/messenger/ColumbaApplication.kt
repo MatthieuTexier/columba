@@ -12,6 +12,7 @@ import com.lxmf.messenger.reticulum.model.ReticulumConfig
 import com.lxmf.messenger.reticulum.protocol.ReticulumProtocol
 import com.lxmf.messenger.reticulum.protocol.ServiceReticulumProtocol
 import com.lxmf.messenger.service.IdentityResolutionManager
+import com.lxmf.messenger.service.LocationSharingManager
 import com.lxmf.messenger.service.MessageCollector
 import com.lxmf.messenger.service.PropagationNodeManager
 import com.lxmf.messenger.service.SosActiveTracker
@@ -99,6 +100,9 @@ class ColumbaApplication : Application() {
 
     @Inject
     lateinit var receivedLocationDao: com.lxmf.messenger.data.db.dao.ReceivedLocationDao
+
+    @Inject
+    lateinit var locationSharingManager: LocationSharingManager
 
     // Application-level coroutine scope for app-wide operations
     // Uses Dispatchers.Default for background initialization (no main-thread work needed)
@@ -284,7 +288,8 @@ class ColumbaApplication : Application() {
                     // (collector address + send/request toggles) is available even if
                     // startup exits early while service is INITIALIZING/RESTARTING.
                     telemetryCollectorManager.start()
-                    android.util.Log.d("ColumbaApplication", "TelemetryCollectorManager started early after bind")
+                    locationSharingManager.restoreIfActive()
+                    android.util.Log.d("ColumbaApplication", "TelemetryCollectorManager + LocationSharingManager started early after bind")
 
                     // Check if service is already initialized (handle service process surviving app restart)
                     // Use timeout to prevent ANR if service is slow
@@ -325,6 +330,7 @@ class ColumbaApplication : Application() {
                             identityResolutionManager.start(applicationScope)
                             propagationNodeManager.start()
                             telemetryCollectorManager.start()
+                            locationSharingManager.restoreIfActive()
                             android.util.Log.d(
                                 "ColumbaApplication",
                                 "MessageCollector, AutoAnnounceManager, IdentityResolutionManager, PropagationNodeManager, TelemetryCollectorManager started",
@@ -443,6 +449,7 @@ class ColumbaApplication : Application() {
                             identityResolutionManager.start(applicationScope)
                             propagationNodeManager.start()
                             telemetryCollectorManager.start()
+                            locationSharingManager.restoreIfActive()
                             android.util.Log.d(
                                 "ColumbaApplication",
                                 "MessageCollector, AutoAnnounceManager, IdentityResolutionManager, PropagationNodeManager, TelemetryCollectorManager started",
@@ -638,6 +645,7 @@ class ColumbaApplication : Application() {
                     identityResolutionManager.start(applicationScope)
                     propagationNodeManager.start()
                     telemetryCollectorManager.start()
+                    locationSharingManager.restoreIfActive()
                     android.util.Log.d(
                         "ColumbaApplication",
                         "initializeReticulumService: MessageCollector, AutoAnnounceManager, IdentityResolutionManager, PropagationNodeManager, TelemetryCollectorManager started",
