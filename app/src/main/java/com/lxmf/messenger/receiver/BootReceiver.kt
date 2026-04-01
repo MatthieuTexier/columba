@@ -21,9 +21,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
         Log.d(TAG, "Boot completed — starting Reticulum service")
-        val serviceIntent = Intent().apply {
-            setClassName(context.packageName, "com.lxmf.messenger.service.ReticulumService")
-        }
+        val serviceIntent = Intent(context, com.lxmf.messenger.service.ReticulumService::class.java)
         try {
             context.startForegroundService(serviceIntent)
             Log.d(TAG, "Reticulum service start requested")
