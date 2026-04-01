@@ -74,6 +74,9 @@ class LocationForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Clear coordinator state so callers don't believe GPS is still active.
+        // Uses clearReasons() (not clearAll()) to avoid poisoning serviceFailed.
+        LocationServiceCoordinator.clearReasons()
         Log.d(TAG, "Location foreground service stopped")
     }
 

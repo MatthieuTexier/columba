@@ -55,7 +55,11 @@ object LocationServiceCoordinator {
                 }
             } else {
                 // Update notification text to reflect new reason
-                LocationForegroundService.start(context, text)
+                try {
+                    LocationForegroundService.start(context, text)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update service notification for '$reason'", e)
+                }
                 Log.d(TAG, "Location service updated, added reason: $reason (active: $activeReasons)")
             }
         }
@@ -67,6 +71,16 @@ object LocationServiceCoordinator {
             Log.w(TAG, "Clearing all reasons due to service failure (was: $activeReasons)")
             activeReasons.clear()
             serviceFailed = true
+        }
+    }
+
+    /** Called by the service onDestroy — clears reasons without poisoning serviceFailed. */
+    fun clearReasons() {
+        synchronized(activeReasons) {
+            if (activeReasons.isNotEmpty()) {
+                Log.d(TAG, "Service destroyed, clearing reasons (was: $activeReasons)")
+                activeReasons.clear()
+            }
         }
     }
 
