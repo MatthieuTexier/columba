@@ -48,7 +48,7 @@ import com.lxmf.messenger.data.db.entity.RmspServerEntity
         BlockedPeerEntity::class,
         InterfaceFirstSeenEntity::class,
     ],
-    version = 44,
+    version = 45,
     exportSchema = false,
 )
 abstract class ColumbaDatabase : RoomDatabase() {

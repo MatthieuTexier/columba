@@ -11,7 +11,6 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.lxmf.messenger.util.LocationCompat
 import com.lxmf.messenger.data.db.dao.ReceivedLocationDao
 import com.lxmf.messenger.data.db.entity.ReceivedLocationEntity
 import com.lxmf.messenger.data.model.LocationTelemetry
@@ -20,6 +19,7 @@ import com.lxmf.messenger.repository.SettingsRepository
 import com.lxmf.messenger.reticulum.protocol.ReticulumProtocol
 import com.lxmf.messenger.reticulum.protocol.ServiceReticulumProtocol
 import com.lxmf.messenger.ui.model.SharingDuration
+import com.lxmf.messenger.util.LocationCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -131,6 +131,85 @@ class LocationSharingManager
         }
 
         /**
+         * Restore persisted sharing sessions after app restart.
+         * Called from Application.onCreate to resume location sharing without opening the UI.
+         */
+        @SuppressLint("MissingPermission")
+        fun restoreIfActive() {
+            if (_isSharing.value) return // already active, don't clobber
+            scope.launch {
+                try {
+                    if (_isSharing.value) return@launch // re-check after dispatch
+                    val json = settingsRepository.getLocationSharingSessions() ?: return@launch
+                    val sessions = deserializeSessions(json)
+                    if (sessions.isEmpty()) return@launch
+
+                    // Filter out sessions that have already expired
+                    val now = System.currentTimeMillis()
+                    val active = sessions.filter { it.endTime == null || it.endTime > now }
+                    if (active.isEmpty()) {
+                        settingsRepository.clearLocationSharingSessions()
+                        return@launch
+                    }
+
+                    _activeSessions.value = active
+                    _isSharing.value = true
+
+                    LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_SHARING)
+                    if (locationUpdateJob == null || locationUpdateJob?.isActive != true) {
+                        startLocationUpdates()
+                    }
+                    if (sessionCheckJob == null || sessionCheckJob?.isActive != true) {
+                        startSessionCheck()
+                    }
+
+                    Log.d(TAG, "Restored ${active.size} sharing sessions from persistence")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to restore sharing sessions, clearing", e)
+                    settingsRepository.clearLocationSharingSessions()
+                }
+            }
+        }
+
+        private fun persistSessions() {
+            scope.launch {
+                val sessions = _activeSessions.value
+                if (sessions.isEmpty()) {
+                    settingsRepository.clearLocationSharingSessions()
+                } else {
+                    settingsRepository.saveLocationSharingSessions(serializeSessions(sessions))
+                }
+            }
+        }
+
+        private fun serializeSessions(sessions: List<SharingSession>): String {
+            val array = org.json.JSONArray()
+            for (s in sessions) {
+                val obj = JSONObject().apply {
+                    put("destinationHash", s.destinationHash)
+                    put("displayName", s.displayName)
+                    put("startTime", s.startTime)
+                    if (s.endTime != null) put("endTime", s.endTime)
+                }
+                array.put(obj)
+            }
+            return array.toString()
+        }
+
+        private fun deserializeSessions(json: String): List<SharingSession> {
+            val array = org.json.JSONArray(json)
+            return (0 until array.length()).map { i ->
+                val obj = array.getJSONObject(i)
+                SharingSession(
+                    destinationHash = obj.getString("destinationHash"),
+                    displayName = obj.getString("displayName"),
+                    startTime = obj.getLong("startTime"),
+                    endTime = if (obj.has("endTime")) obj.getLong("endTime") else null,
+                )
+            }
+        }
+
+        /**
          * Start sharing location with specified contacts.
          *
          * @param contactHashes List of destination hashes to share with
@@ -165,6 +244,7 @@ class LocationSharingManager
             _isSharing.value = updated.isNotEmpty()
 
             Log.d(TAG, "Started sharing with ${newSessions.size} contacts, duration=$duration")
+            persistSessions()
 
             // Send last known location immediately (don't wait for first GPS update)
             if (useGms) {
@@ -180,6 +260,9 @@ class LocationSharingManager
                     sendLocationToRecipients(location)
                 }
             }
+
+            // Ensure foreground service is running for Doze-resistant GPS
+            LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_SHARING)
 
             // Start location updates if not already running
             if (locationUpdateJob == null || locationUpdateJob?.isActive != true) {
@@ -268,9 +351,11 @@ class LocationSharingManager
                 stopLocationUpdates()
                 sessionCheckJob?.cancel()
                 sessionCheckJob = null
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
             }
 
             Log.d(TAG, "Stopped sharing, remaining sessions: ${updated.size}")
+            persistSessions()
 
             scope.launch {
                 _sharingEvents.emit(SharingEvent.Stopped(destinationHash))
@@ -338,7 +423,7 @@ class LocationSharingManager
                             val locationRequest =
                                 LocationRequest
                                     .Builder(
-                                        Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                                        Priority.PRIORITY_HIGH_ACCURACY,
                                         LOCATION_UPDATE_INTERVAL_MS,
                                     ).apply {
                                         setMinUpdateIntervalMillis(LOCATION_MIN_UPDATE_INTERVAL_MS)
@@ -364,6 +449,12 @@ class LocationSharingManager
                     } catch (e: SecurityException) {
                         Log.e(TAG, "Location permission not granted", e)
                         _sharingEvents.emit(SharingEvent.Error("Location permission required"))
+                        _activeSessions.value = emptyList()
+                        _isSharing.value = false
+                        sessionCheckJob?.cancel()
+                        sessionCheckJob = null
+                        persistSessions()
+                        LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                     }
                 }
         }
@@ -421,9 +512,13 @@ class LocationSharingManager
 
                 if (active.isEmpty()) {
                     stopLocationUpdates()
+                    sessionCheckJob?.cancel()
+                    sessionCheckJob = null
+                    LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                 }
 
                 _sharingEvents.emit(SharingEvent.SessionsExpired(expired.size))
+                persistSessions()
             }
         }
 

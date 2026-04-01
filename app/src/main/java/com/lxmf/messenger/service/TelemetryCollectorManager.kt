@@ -183,7 +183,7 @@ class TelemetryCollectorManager
             // Start periodic sending and requesting
             restartPeriodicSend()
             restartPeriodicRequest()
-            locationTracker.update(shouldTrackLocation())
+            updateLocationTracking()
         }
 
         private fun CoroutineScope.launchSendSettingsObservers() {
@@ -208,10 +208,10 @@ class TelemetryCollectorManager
                             }
                         }
                         _collectorAddress.value = address
-                        Log.d(TAG, "Collector address updated: ${address?.take(16) ?: "none"}")
+                        Log.d(TAG, "Collector address updated: ${address ?: "none"}")
                         restartPeriodicSend()
                         restartPeriodicRequest()
-                        locationTracker.update(shouldTrackLocation())
+                        updateLocationTracking()
                     }
             }
             launch {
@@ -221,7 +221,7 @@ class TelemetryCollectorManager
                         _isEnabled.value = enabled
                         Log.d(TAG, "Collector enabled: $enabled")
                         restartPeriodicSend()
-                        locationTracker.update(shouldTrackLocation())
+                        updateLocationTracking()
                     }
             }
             launch {
@@ -250,6 +250,7 @@ class TelemetryCollectorManager
                         _isRequestEnabled.value = enabled
                         Log.d(TAG, "Request enabled: $enabled")
                         restartPeriodicRequest()
+                        updateLocationTracking()
                     }
             }
             launch {
@@ -309,16 +310,42 @@ class TelemetryCollectorManager
          */
         fun stop() {
             Log.d(TAG, "Stopping TelemetryCollectorManager")
+            // Poison state first so straggling flow collectors won't re-acquire the service
+            _isEnabled.value = false
+            _isRequestEnabled.value = false
+            _collectorAddress.value = null
             settingsObserverJob?.cancel()
             periodicSendJob?.cancel()
             periodicRequestJob?.cancel()
-            locationTracker.stop()
             settingsObserverJob = null
             periodicSendJob = null
             periodicRequestJob = null
+            locationTracker.stop()
+            if (LocationServiceCoordinator.isAcquired(LocationServiceCoordinator.REASON_TELEMETRY)) {
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            }
         }
 
         private fun shouldTrackLocation(): Boolean = _isEnabled.value && _collectorAddress.value != null
+
+        /** Whether any telemetry activity (send or request) needs the process kept alive. */
+        private fun needsForegroundService(): Boolean =
+            _collectorAddress.value != null && (_isEnabled.value || _isRequestEnabled.value)
+
+        /** Update location tracking and coordinate the foreground service lifecycle. */
+        private fun updateLocationTracking() {
+            val shouldTrack = shouldTrackLocation()
+            locationTracker.update(shouldTrack)
+
+            // Foreground service is needed for both send (GPS) and request-only (periodic polling)
+            val needsService = needsForegroundService()
+            val hasService = LocationServiceCoordinator.isAcquired(LocationServiceCoordinator.REASON_TELEMETRY)
+            if (needsService && !hasService) {
+                LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            } else if (!needsService && hasService) {
+                LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_TELEMETRY)
+            }
+        }
 
         /**
          * Update the collector address.
