@@ -23,6 +23,12 @@ object LocationServiceCoordinator {
     @Volatile
     private var serviceFailed = false
 
+    // Generation counter: incremented each time the service is started.
+    // onDestroy only clears reasons if its generation matches the current one,
+    // preventing a dying instance from clearing state for a freshly started one.
+    @Volatile
+    private var currentGeneration = 0L
+
     fun isAcquired(reason: String): Boolean = synchronized(activeReasons) { reason in activeReasons }
 
     /** Call after the user re-grants location permission to allow re-acquiring the service. */
@@ -46,9 +52,10 @@ object LocationServiceCoordinator {
             activeReasons.add(reason)
             val text = notificationText()
             if (wasEmpty) {
-                Log.d(TAG, "Starting location foreground service (reason: $reason)")
+                currentGeneration++
+                Log.d(TAG, "Starting location foreground service (reason: $reason, gen=$currentGeneration)")
                 try {
-                    LocationForegroundService.start(context, text)
+                    LocationForegroundService.start(context, text, currentGeneration)
                 } catch (e: Exception) {
                     activeReasons.remove(reason)
                     Log.e(TAG, "Failed to start service, rolled back '$reason'", e)
@@ -56,7 +63,7 @@ object LocationServiceCoordinator {
             } else {
                 // Update notification text to reflect new reason
                 try {
-                    LocationForegroundService.start(context, text)
+                    LocationForegroundService.start(context, text, currentGeneration)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update service notification for '$reason'", e)
                 }
@@ -74,12 +81,14 @@ object LocationServiceCoordinator {
         }
     }
 
-    /** Called by the service onDestroy — clears reasons without poisoning serviceFailed. */
-    fun clearReasons() {
+    /** Called by the service onDestroy — clears reasons only if generation matches. */
+    fun clearReasonsForGeneration(generation: Long) {
         synchronized(activeReasons) {
-            if (activeReasons.isNotEmpty()) {
-                Log.d(TAG, "Service destroyed, clearing reasons (was: $activeReasons)")
+            if (generation == currentGeneration && activeReasons.isNotEmpty()) {
+                Log.d(TAG, "Service destroyed (gen=$generation), clearing reasons (was: $activeReasons)")
                 activeReasons.clear()
+            } else if (generation != currentGeneration) {
+                Log.d(TAG, "Service destroyed (gen=$generation) but current is gen=$currentGeneration — ignoring")
             }
         }
     }
@@ -95,7 +104,11 @@ object LocationServiceCoordinator {
                 LocationForegroundService.stop(context)
             } else {
                 // Update notification text to reflect remaining reasons
-                LocationForegroundService.start(context, notificationText())
+                try {
+                    LocationForegroundService.start(context, notificationText(), currentGeneration)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update service notification after release", e)
+                }
                 Log.d(TAG, "Location service updated (released: $reason, remaining: $activeReasons)")
             }
         }
