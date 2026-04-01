@@ -29,10 +29,12 @@ class LocationForegroundService : Service() {
         private const val NOTIFICATION_ID = 1004
 
         private const val EXTRA_TEXT = "notification_text"
+        private const val EXTRA_GENERATION = "generation"
 
-        fun start(context: Context, notificationText: String = "Location active") {
+        fun start(context: Context, notificationText: String = "Location active", generation: Long = 0) {
             val intent = Intent(context, LocationForegroundService::class.java)
                 .putExtra(EXTRA_TEXT, notificationText)
+                .putExtra(EXTRA_GENERATION, generation)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -45,6 +47,8 @@ class LocationForegroundService : Service() {
         }
     }
 
+    private var myGeneration = 0L
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -52,6 +56,7 @@ class LocationForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val text = intent?.getStringExtra(EXTRA_TEXT) ?: "Location active"
+        myGeneration = intent?.getLongExtra(EXTRA_GENERATION, 0L) ?: 0L
         val notification = buildNotification(text)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -65,7 +70,7 @@ class LocationForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        Log.d(TAG, "Location foreground service started")
+        Log.d(TAG, "Location foreground service started (gen=$myGeneration)")
         // NOT_STICKY: don't restart after process death — coordinator will re-acquire
         return START_NOT_STICKY
     }
@@ -74,10 +79,10 @@ class LocationForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clear coordinator state so callers don't believe GPS is still active.
-        // Uses clearReasons() (not clearAll()) to avoid poisoning serviceFailed.
-        LocationServiceCoordinator.clearReasons()
-        Log.d(TAG, "Location foreground service stopped")
+        // Only clear coordinator state if this instance matches the current generation.
+        // Prevents a dying instance from clearing state for a freshly started one.
+        LocationServiceCoordinator.clearReasonsForGeneration(myGeneration)
+        Log.d(TAG, "Location foreground service stopped (gen=$myGeneration)")
     }
 
     private fun createNotificationChannel() {
