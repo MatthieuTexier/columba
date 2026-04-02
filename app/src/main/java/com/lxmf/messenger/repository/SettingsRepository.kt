@@ -1958,8 +1958,7 @@ class SettingsRepository
             }
         }
 
-        // ========== SOS Emergency Settings ==========
-
+        // ========== SOS Emergency Settings ===
         val sosEnabled: Flow<Boolean> =
             context.dataStore.data
                 .map { preferences ->
@@ -2073,8 +2072,7 @@ class SettingsRepository
             }
         }
 
-        // ========== SOS State Persistence ==========
-
+        // ========== SOS State Persistence ===
         val sosActive: Flow<Boolean> =
             context.dataStore.data
                 .map { preferences ->
@@ -2112,8 +2110,7 @@ class SettingsRepository
             }
         }
 
-        // ========== SOS Trigger Mode Settings ==========
-
+        // ========== SOS Trigger Mode Settings ===
         @Suppress("DEPRECATION")
         val sosTriggerModes: Flow<Set<String>> =
             context.dataStore.data
@@ -2158,8 +2155,7 @@ class SettingsRepository
             }
         }
 
-        // ========== SOS Audio Recording Settings ==========
-
+        // ========== SOS Audio Recording Settings ===
         val sosAudioEnabled: Flow<Boolean> =
             context.dataStore.data
                 .map { preferences ->
@@ -2210,8 +2206,7 @@ class SettingsRepository
             }
         }
 
-        // ========== Location Sharing Session Persistence ==========
-
+        // ========== Location Sharing Session Persistence ===
         suspend fun saveLocationSharingSessions(sessionsJson: String) {
             context.dataStore.edit { preferences ->
                 preferences[PreferencesKeys.LOCATION_SHARING_SESSIONS] = sessionsJson

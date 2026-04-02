@@ -1709,11 +1709,20 @@ object DatabaseModule {
             }
         }
 
-    // Migration 44→45: ensure all v44 schema objects exist for devices that ran
-    // an intermediate version where migration 43→44 only added the source column.
+    // Migration 44→45: Add source column + index to received_locations.
+    // Uses IF NOT EXISTS for index and table to handle devices that ran
+    // intermediate builds where 43→44 already added some of these objects.
     private val MIGRATION_44_45 =
         object : Migration(44, 45) {
             override fun migrate(database: SupportSQLiteDatabase) {
+                // Add source column if not already present (some intermediate builds had it in 43→44)
+                try {
+                    database.execSQL(
+                        "ALTER TABLE received_locations ADD COLUMN source TEXT NOT NULL DEFAULT 'location_sharing'",
+                    )
+                } catch (_: Exception) {
+                    // Column already exists from an intermediate 43→44 migration
+                }
                 database.execSQL(
                     "CREATE INDEX IF NOT EXISTS idx_received_locations_source " +
                         "ON received_locations(source, senderHash, timestamp)",

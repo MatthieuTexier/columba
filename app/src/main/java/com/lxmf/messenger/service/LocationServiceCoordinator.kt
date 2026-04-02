@@ -18,24 +18,56 @@ object LocationServiceCoordinator {
 
     private val activeReasons = mutableSetOf<String>()
 
+    // Set when the service fails to start (e.g. SecurityException on Android 14+).
+    // Prevents observers from retrying acquire() in a loop.
+    @Volatile
+    private var serviceFailed = false
+
+    // Generation counter: incremented each time the service is started.
+    // onDestroy only clears reasons if its generation matches the current one,
+    // preventing a dying instance from clearing state for a freshly started one.
+    @Volatile
+    private var currentGeneration = 0L
+
     fun isAcquired(reason: String): Boolean = synchronized(activeReasons) { reason in activeReasons }
 
+    /** Call after the user re-grants location permission to allow re-acquiring the service. */
+    fun resetFailedState() {
+        serviceFailed = false
+        Log.d(TAG, "serviceFailed flag cleared — permission likely re-granted")
+    }
+
     fun acquire(context: Context, reason: String) {
+        if (serviceFailed) {
+            // Check if permission was re-granted since the failure
+            if (com.lxmf.messenger.util.LocationPermissionManager.hasPermission(context)) {
+                resetFailedState()
+            } else {
+                return
+            }
+        }
         synchronized(activeReasons) {
+            if (serviceFailed) return // re-check under lock
             val wasEmpty = activeReasons.isEmpty()
             activeReasons.add(reason)
             val text = notificationText()
             if (wasEmpty) {
-                Log.d(TAG, "Starting location foreground service (reason: $reason)")
+                val nextGen = currentGeneration + 1
+                Log.d(TAG, "Starting location foreground service (reason: $reason, gen=$nextGen)")
                 try {
-                    LocationForegroundService.start(context, text)
+                    LocationForegroundService.start(context, text, nextGen)
+                    currentGeneration = nextGen // commit only on success
                 } catch (e: Exception) {
                     activeReasons.remove(reason)
                     Log.e(TAG, "Failed to start service, rolled back '$reason'", e)
                 }
             } else {
                 // Update notification text to reflect new reason
-                LocationForegroundService.start(context, text)
+                try {
+                    LocationForegroundService.start(context, text, currentGeneration)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update service notification for '$reason'", e)
+                }
                 Log.d(TAG, "Location service updated, added reason: $reason (active: $activeReasons)")
             }
         }
@@ -46,6 +78,19 @@ object LocationServiceCoordinator {
         synchronized(activeReasons) {
             Log.w(TAG, "Clearing all reasons due to service failure (was: $activeReasons)")
             activeReasons.clear()
+            serviceFailed = true
+        }
+    }
+
+    /** Called by the service onDestroy — clears reasons only if generation matches. */
+    fun clearReasonsForGeneration(generation: Long) {
+        synchronized(activeReasons) {
+            if (generation == currentGeneration && activeReasons.isNotEmpty()) {
+                Log.d(TAG, "Service destroyed (gen=$generation), clearing reasons (was: $activeReasons)")
+                activeReasons.clear()
+            } else if (generation != currentGeneration) {
+                Log.d(TAG, "Service destroyed (gen=$generation) but current is gen=$currentGeneration — ignoring")
+            }
         }
     }
 
@@ -60,7 +105,11 @@ object LocationServiceCoordinator {
                 LocationForegroundService.stop(context)
             } else {
                 // Update notification text to reflect remaining reasons
-                LocationForegroundService.start(context, notificationText())
+                try {
+                    LocationForegroundService.start(context, notificationText(), currentGeneration)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to update service notification after release", e)
+                }
                 Log.d(TAG, "Location service updated (released: $reason, remaining: $activeReasons)")
             }
         }

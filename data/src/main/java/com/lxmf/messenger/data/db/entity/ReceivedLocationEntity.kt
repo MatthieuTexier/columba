@@ -18,7 +18,7 @@ import androidx.room.PrimaryKey
         Index("senderHash"), // For querying locations by contact
         Index("senderHash", "timestamp"), // For getting latest per contact
         Index("expiresAt"), // For cleanup of expired locations
-        Index("source", "senderHash", "timestamp", name = "idx_received_locations_source"), // For SOS trail queries
+        Index("source", "senderHash", "timestamp", name = "idx_received_locations_source"),
     ],
 )
 data class ReceivedLocationEntity(

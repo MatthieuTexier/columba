@@ -40,17 +40,14 @@ class BootReceiver : BroadcastReceiver() {
             ContextCompat.startForegroundService(context, serviceIntent)
             Log.d(TAG, "ReticulumService start requested")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start ReticulumService on boot: ${e.message}", e)
+            Log.e(TAG, "Failed to start ReticulumService on boot: ${e::class.simpleName}", e)
         }
 
-        // Start SosTriggerService to keep the main process alive while
-        // startObserving() reads DataStore. If SOS is not active, the observer
-        // will stop this service within seconds.
         try {
             SosTriggerService.start(context)
             Log.d(TAG, "SosTriggerService start requested")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start SosTriggerService on boot: ${e.message}", e)
+            Log.e(TAG, "Failed to start SosTriggerService on boot: ${e::class.simpleName}", e)
         }
     }
 }

@@ -229,6 +229,16 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Auto-start services after device boot -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Disable Sentry auto-initialization provider (we initialize manually in Application) -->
         <provider
             android:name="io.sentry.android.core.SentryInitProvider"

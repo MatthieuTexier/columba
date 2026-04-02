@@ -110,6 +110,7 @@ class LocationSharingManager
 
         // Platform LocationManager listener (used when GMS is not available)
         private var platformLocationListener: LocationListener? = null
+        private val isRestoring = java.util.concurrent.atomic.AtomicBoolean(false)
 
         // Location callback for GMS updates
         private val locationCallback =
@@ -136,10 +137,11 @@ class LocationSharingManager
          */
         @SuppressLint("MissingPermission")
         fun restoreIfActive() {
-            if (_isSharing.value) return // already active, don't clobber
+            if (_isSharing.value) return
+            if (!isRestoring.compareAndSet(false, true)) return
             scope.launch {
                 try {
-                    if (_isSharing.value) return@launch // re-check after dispatch
+                    if (_isSharing.value) return@launch
                     val json = settingsRepository.getLocationSharingSessions() ?: return@launch
                     val sessions = deserializeSessions(json)
                     if (sessions.isEmpty()) return@launch
@@ -152,10 +154,9 @@ class LocationSharingManager
                         return@launch
                     }
 
+                    LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_SHARING)
                     _activeSessions.value = active
                     _isSharing.value = true
-
-                    LocationServiceCoordinator.acquire(context, LocationServiceCoordinator.REASON_SHARING)
                     if (locationUpdateJob == null || locationUpdateJob?.isActive != true) {
                         startLocationUpdates()
                     }
@@ -167,6 +168,8 @@ class LocationSharingManager
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to restore sharing sessions, clearing", e)
                     settingsRepository.clearLocationSharingSessions()
+                } finally {
+                    isRestoring.set(false)
                 }
             }
         }
@@ -202,7 +205,7 @@ class LocationSharingManager
                 val obj = array.getJSONObject(i)
                 SharingSession(
                     destinationHash = obj.getString("destinationHash"),
-                    displayName = obj.getString("displayName"),
+                    displayName = obj.optString("displayName", ""),
                     startTime = obj.getLong("startTime"),
                     endTime = if (obj.has("endTime")) obj.getLong("endTime") else null,
                 )
@@ -351,11 +354,14 @@ class LocationSharingManager
                 stopLocationUpdates()
                 sessionCheckJob?.cancel()
                 sessionCheckJob = null
+                persistSessions()
+                // Release LAST so the foreground service keeps the process alive for the DataStore write
                 LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
+            } else {
+                persistSessions()
             }
 
             Log.d(TAG, "Stopped sharing, remaining sessions: ${updated.size}")
-            persistSessions()
 
             scope.launch {
                 _sharingEvents.emit(SharingEvent.Stopped(destinationHash))
@@ -510,15 +516,15 @@ class LocationSharingManager
                 _activeSessions.value = active
                 _isSharing.value = active.isNotEmpty()
 
+                _sharingEvents.emit(SharingEvent.SessionsExpired(expired.size))
+                persistSessions()
+
                 if (active.isEmpty()) {
                     stopLocationUpdates()
                     sessionCheckJob?.cancel()
                     sessionCheckJob = null
                     LocationServiceCoordinator.release(context, LocationServiceCoordinator.REASON_SHARING)
                 }
-
-                _sharingEvents.emit(SharingEvent.SessionsExpired(expired.size))
-                persistSessions()
             }
         }
 
