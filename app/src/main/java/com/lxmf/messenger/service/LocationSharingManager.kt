@@ -429,7 +429,7 @@ class LocationSharingManager
                             val locationRequest =
                                 LocationRequest
                                     .Builder(
-                                        Priority.PRIORITY_HIGH_ACCURACY,
+                                        Priority.PRIORITY_BALANCED_POWER_ACCURACY,
                                         LOCATION_UPDATE_INTERVAL_MS,
                                     ).apply {
                                         setMinUpdateIntervalMillis(LOCATION_MIN_UPDATE_INTERVAL_MS)
