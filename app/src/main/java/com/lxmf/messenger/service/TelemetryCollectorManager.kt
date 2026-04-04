@@ -155,7 +155,9 @@ class TelemetryCollectorManager
         private val locationTracker = TelemetryLocationTracker(context, useGms, fusedLocationClient)
 
         @androidx.annotation.VisibleForTesting
-        internal fun ensureLocationTrackerActive() = locationTracker.update(true)
+        internal fun ensureLocationTrackerActive() {
+            locationTracker.activateForTest()
+        }
 
         // Last attempt timestamps (success OR failure) used to throttle retries.
         // We keep last successful timestamps in SettingsRepository for UI/history,
@@ -186,7 +188,7 @@ class TelemetryCollectorManager
             // Start periodic sending and requesting
             restartPeriodicSend()
             restartPeriodicRequest()
-            locationTracker.update(shouldTrackLocation())
+            locationTracker.update(shouldTrackLocation(), _sendIntervalSeconds.value * 1000L)
         }
 
         private fun CoroutineScope.launchSendSettingsObservers() {
@@ -214,7 +216,7 @@ class TelemetryCollectorManager
                         Log.d(TAG, "Collector address updated: ${address?.take(16) ?: "none"}")
                         restartPeriodicSend()
                         restartPeriodicRequest()
-                        locationTracker.update(shouldTrackLocation())
+                        locationTracker.update(shouldTrackLocation(), _sendIntervalSeconds.value * 1000L)
                     }
             }
             launch {
@@ -224,7 +226,7 @@ class TelemetryCollectorManager
                         _isEnabled.value = enabled
                         Log.d(TAG, "Collector enabled: $enabled")
                         restartPeriodicSend()
-                        locationTracker.update(shouldTrackLocation())
+                        locationTracker.update(shouldTrackLocation(), _sendIntervalSeconds.value * 1000L)
                     }
             }
             launch {
@@ -234,6 +236,7 @@ class TelemetryCollectorManager
                         _sendIntervalSeconds.value = interval
                         Log.d(TAG, "Send interval updated: ${interval}s")
                         restartPeriodicSend()
+                        locationTracker.update(shouldTrackLocation(), interval * 1000L)
                     }
             }
             launch {
