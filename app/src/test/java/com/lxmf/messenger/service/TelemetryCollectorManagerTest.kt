@@ -466,15 +466,14 @@ class TelemetryCollectorManagerTest {
             mockkObject(LocationCompat)
             try {
                 every { LocationCompat.isPlayServicesAvailable(any()) } returns false
-                every { LocationCompat.getCurrentLocation(any(), any()) } answers {
-                    val callback = secondArg<(Location?) -> Unit>()
-                    val location =
-                        Location("test").apply {
-                            latitude = 48.8566
-                            longitude = 2.3522
-                            accuracy = 5f
-                            time = System.currentTimeMillis()
-                        }
+                every { LocationCompat.getCurrentLocation(any(), any(), any()) } answers {
+                    val callback = thirdArg<(Location?) -> Unit>()
+                    val location = Location("test").apply {
+                        latitude = 48.8566
+                        longitude = 2.3522
+                        accuracy = 5f
+                        time = System.currentTimeMillis()
+                    }
                     callback(location)
                 }
 
@@ -498,6 +497,8 @@ class TelemetryCollectorManagerTest {
                 hostModeEnabledFlow.value = true
                 networkStatusFlow.value = NetworkStatus.READY
                 advanceUntilIdle()
+                // Activate tracker directly (enabling via flow starts periodic loops that hang the test)
+                manager.ensureLocationTrackerActive()
 
                 val result = manager.sendTelemetryNow()
 
@@ -520,15 +521,14 @@ class TelemetryCollectorManagerTest {
             mockkObject(LocationCompat)
             try {
                 every { LocationCompat.isPlayServicesAvailable(any()) } returns false
-                every { LocationCompat.getCurrentLocation(any(), any()) } answers {
-                    val callback = secondArg<(Location?) -> Unit>()
-                    val location =
-                        Location("test").apply {
-                            latitude = 48.8566
-                            longitude = 2.3522
-                            accuracy = 5f
-                            time = System.currentTimeMillis()
-                        }
+                every { LocationCompat.getCurrentLocation(any(), any(), any()) } answers {
+                    val callback = thirdArg<(Location?) -> Unit>()
+                    val location = Location("test").apply {
+                        latitude = 48.8566
+                        longitude = 2.3522
+                        accuracy = 5f
+                        time = System.currentTimeMillis()
+                    }
                     callback(location)
                 }
 
@@ -578,6 +578,7 @@ class TelemetryCollectorManagerTest {
                 collectorAddressFlow.value = remoteHash
                 networkStatusFlow.value = NetworkStatus.READY
                 advanceUntilIdle()
+                manager.ensureLocationTrackerActive()
 
                 val result = manager.sendTelemetryNow()
 
