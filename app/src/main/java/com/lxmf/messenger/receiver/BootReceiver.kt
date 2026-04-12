@@ -43,11 +43,10 @@ class BootReceiver : BroadcastReceiver() {
             Log.e(TAG, "Failed to start ReticulumService on boot: ${e::class.simpleName}", e)
         }
 
-        try {
-            SosTriggerService.start(context)
-            Log.d(TAG, "SosTriggerService start requested")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start SosTriggerService on boot: ${e::class.simpleName}", e)
-        }
+        // SosTriggerService is NOT started here — it is managed by SosTriggerDetector
+        // which runs in Application.onCreate once the main process is created by the
+        // ReticulumService binding above. Starting it from the BootReceiver causes a race:
+        // SosTriggerDetector.startObserving() can call stop() before the service has time
+        // to call startForeground(), triggering an Android FGS timeout crash.
     }
 }

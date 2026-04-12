@@ -53,11 +53,13 @@ class SosTriggerService : Service() {
         createNotificationChannel()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Request only specialUse (accelerometer monitoring). Microphone is
+                // declared in the manifest but restricted from background — it will be
+                // available when the SOS actually triggers and the app comes to foreground.
                 startForeground(
                     NOTIFICATION_ID,
                     createNotification(),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
                 )
             } else {
                 startForeground(NOTIFICATION_ID, createNotification())
