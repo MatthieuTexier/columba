@@ -447,6 +447,44 @@ class SosTriggerDetectorTest {
     }
 
     @Test
+    fun `bursty spikes separated by short dips do not trigger shake`() {
+        // Regression: previously, a dip below threshold ≤200ms did not reset
+        // lastShakeEventTime, so the next above-threshold sample would credit
+        // the ENTIRE dip duration into shakeAccumulatedMs, letting sparse
+        // bumps (running / dropped bag) falsely trigger SOS even at 4.0x.
+        //
+        // This test simulates 5 brief spikes (30 ms above threshold) spaced
+        // 150 ms apart — total above-threshold time ~150 ms, well under the
+        // 500 ms required. It must NOT trigger.
+        detector.activeModes = setOf(SosTriggerMode.SHAKE)
+        detector.shakeSensitivity = 4.0f
+
+        val threshold = 4.0f * 9.81f
+        val t = 10_000L
+        val spikeDuration = 30L
+        val interSpikeGap = 150L
+
+        repeat(5) { i ->
+            val spikeStart = t + i * (spikeDuration + interSpikeGap)
+            // Above-threshold for `spikeDuration`, sampled every 10 ms
+            var s = spikeStart
+            while (s <= spikeStart + spikeDuration) {
+                detector.handleShake(threshold + 5f, s)
+                s += 10L
+            }
+            // Dip below threshold, sampled every 30 ms through the gap
+            var d = spikeStart + spikeDuration + 30L
+            while (d < spikeStart + spikeDuration + interSpikeGap) {
+                detector.handleShake(1.0f, d)
+                d += 30L
+            }
+        }
+
+        assertEquals(SosState.Idle, sosManager.state.value)
+        verify(exactly = 0) { sosManager.trigger() }
+    }
+
+    @Test
     fun `resetShakeState clears shake tracking`() {
         detector.activeModes = setOf(SosTriggerMode.SHAKE)
         detector.shakeSensitivity = 2.5f
