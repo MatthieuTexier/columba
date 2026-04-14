@@ -78,6 +78,11 @@ class SosTriggerDetector
             private const val SHAKE_DURATION_MS = 500L
             private const val SHAKE_COOLDOWN_MS = 5_000L
 
+            // Max gap between above-threshold samples allowed before resetting accumulation.
+            // Shorter than SHAKE_DURATION_MS so bursty motion (e.g. walking/running bumps
+            // spaced ~150ms apart) cannot masquerade as sustained shaking.
+            private const val SHAKE_GAP_RESET_MS = 200L
+
             // Tap detection constants
             // Spike-based detection: a tap is counted only when netAcceleration crosses above
             // TAP_THRESHOLD and returns below it within MAX_TAP_SPIKE_MS.
@@ -119,7 +124,13 @@ class SosTriggerDetector
 
         @Volatile private var shakeAccumulatedMs = 0L
 
+        // Timestamp of the previous sample IF it was above threshold, else 0L.
+        // Used to credit dt into the accumulator only for continuous above-threshold runs.
         @Volatile private var lastShakeEventTime = 0L
+
+        // Timestamp of the most recent above-threshold sample, persistent across dips.
+        // Used to detect long gaps (> SHAKE_GAP_RESET_MS) and reset the accumulator.
+        @Volatile private var lastAboveTime = 0L
 
         @Volatile private var lastShakeTriggerTime = 0L
 
@@ -317,6 +328,13 @@ class SosTriggerDetector
         /**
          * Shake detection: the net acceleration must exceed [shakeSensitivity] * GRAVITY
          * for a cumulative [SHAKE_DURATION_MS] within a [SHAKE_WINDOW_MS] sliding window.
+         *
+         * The accumulator only advances while consecutive samples stay above threshold.
+         * A dip below threshold breaks the continuous chain immediately (so the duration
+         * of the dip is never credited), and a gap longer than [SHAKE_GAP_RESET_MS]
+         * between above-threshold samples discards the accumulated time entirely. This
+         * prevents bursty motion (e.g. running / bumps in a bag) from inflating the
+         * accumulator by crediting below-threshold time as "shaking".
          */
         internal fun handleShake(
             netAcceleration: Float,
@@ -327,28 +345,40 @@ class SosTriggerDetector
             val threshold = shakeSensitivity * SensorManager.GRAVITY_EARTH
 
             if (netAcceleration > threshold) {
+                // Gap since last above-threshold sample is too long → accumulated run is stale.
+                if (lastAboveTime > 0L && now - lastAboveTime > SHAKE_GAP_RESET_MS) {
+                    resetShakeState()
+                }
+
                 if (shakeStartTime == 0L) {
                     shakeStartTime = now
                 }
-                if (now - shakeStartTime <= SHAKE_WINDOW_MS) {
-                    shakeAccumulatedMs += now - (lastShakeEventTime.takeIf { it > 0L } ?: now)
-                    lastShakeEventTime = now
 
-                    if (shakeAccumulatedMs >= SHAKE_DURATION_MS) {
-                        Log.d(TAG, "Shake detected! Triggering SOS")
-                        lastShakeTriggerTime = now
-                        resetShakeState()
-                        sosManager.trigger()
-                    }
-                } else {
-                    // Window expired, reset
+                if (now - shakeStartTime > SHAKE_WINDOW_MS) {
+                    // Window expired — start a fresh window at this sample.
+                    shakeStartTime = now
+                    shakeAccumulatedMs = 0L
+                    lastShakeEventTime = 0L
+                }
+
+                // Credit dt only when the previous sample was ALSO above threshold
+                // (continuous run). Otherwise this is the first sample of a new run.
+                if (lastShakeEventTime > 0L) {
+                    shakeAccumulatedMs += now - lastShakeEventTime
+                }
+                lastShakeEventTime = now
+                lastAboveTime = now
+
+                if (shakeAccumulatedMs >= SHAKE_DURATION_MS) {
+                    Log.d(TAG, "Shake detected! Triggering SOS")
+                    lastShakeTriggerTime = now
                     resetShakeState()
+                    sosManager.trigger()
                 }
             } else {
-                // Below threshold, allow small gaps but reset if too long
-                if (lastShakeEventTime > 0L && now - lastShakeEventTime > 200L) {
-                    resetShakeState()
-                }
+                // Below threshold: break the continuous-run chain immediately so a
+                // subsequent above-threshold sample cannot credit the dip duration.
+                lastShakeEventTime = 0L
             }
         }
 
@@ -431,6 +461,7 @@ class SosTriggerDetector
             shakeStartTime = 0L
             shakeAccumulatedMs = 0L
             lastShakeEventTime = 0L
+            lastAboveTime = 0L
         }
 
         internal fun resetTapState() {
