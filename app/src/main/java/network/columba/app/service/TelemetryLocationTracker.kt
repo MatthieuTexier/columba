@@ -237,7 +237,13 @@ internal class TelemetryLocationTracker(
     }
 
     /**
-     * Get the current device location via a one-shot request (HIGH_ACCURACY fallback).
+     * Get the current device location via a one-shot request.
+     *
+     * Note: `useGms` is false on MicroG-based ROMs (LocationCompat detects MicroG
+     * by signature and excludes it). On those devices we go straight to platform
+     * `LocationManager.GPS_PROVIDER` — MicroG's FusedLocationProvider was observed
+     * returning stale cell-tower fixes labelled HIGH_ACCURACY, ~2 km off, while
+     * Waze (which queries GPS_PROVIDER directly) had no issue.
      */
     @Suppress("MissingPermission")
     private suspend fun getCurrentLocation(): Location? =
@@ -253,8 +259,8 @@ internal class TelemetryLocationTracker(
                     try {
                         // maxUpdateAgeMillis=0 forces a fresh fix and rejects the OS location
                         // cache. Without it, GMS can return a 5–10s-old network fix labelled
-                        // as HIGH_ACCURACY — which indoors can be several km off while still
-                        // reporting a plausible accuracy value.
+                        // HIGH_ACCURACY which is several km off while still reporting plausible
+                        // accuracy.
                         val request =
                             CurrentLocationRequest
                                 .Builder()
